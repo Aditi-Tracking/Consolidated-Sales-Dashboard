@@ -1,9 +1,32 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line } from "recharts";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aditi Tracking — Sales KPI Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0a12; }
+    @keyframes sp { to { transform: rotate(360deg); } }
+  </style>
+  <!-- React + ReactDOM -->
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <!-- Recharts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js"></script>
+  <!-- Babel (JSX in browser) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useMemo } = React;
+const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line } = Recharts;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  PASTE YOUR GOOGLE APPS SCRIPT WEB APP URLs BELOW
-//  (See setup-guide.md for instructions)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const FIELD_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzhvgzH2FLx28sETY364A1FBxex0Qdy08EH7mzYO9_Do1FQnfrR4Q2f2wTqPUpyqNIYdA/exec";
 const INSIDE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxsC_glUfbC5RJSs0BPFYQI5jbsM5p6VeIraKcl-cO8zC8VjVnLqFYQuumhRP69oEy2/exec";
@@ -224,7 +247,7 @@ const SC = ({ label, value, total, color }) => (
 
 // ─── MAIN ────────────────────────────────────────────────────────────────────
 
-export default function Dashboard() {
+function Dashboard() {
   const [tab, setTab] = useState("overview");
   const [fRows, setFRows] = useState(null);
   const [iRows, setIRows] = useState(null);
@@ -269,7 +292,6 @@ export default function Dashboard() {
   if (notCfg) {
     return (
       <div style={{ minHeight: "100vh", background: "#0a0a12", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans', sans-serif", padding: 32 }}>
-        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <div style={{ maxWidth: 560, textAlign: "center" }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>🔗</div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "#fff", margin: "0 0 8px" }}>Connect Your Private Google Sheets</h1>
@@ -282,7 +304,7 @@ export default function Dashboard() {
               { s: "2", t: "Paste the script code below", d: "Replace any existing code in the editor" },
               { s: "3", t: "Deploy as Web App", d: "Execute as: Me · Who has access: Anyone · Deploy" },
               { s: "4", t: "Authorize when prompted", d: "Allow the script to read your spreadsheet" },
-              { s: "5", t: "Copy the Web App URL", d: "Paste it into this dashboard file (top of code)" },
+              { s: "5", t: "Copy the Web App URL", d: 'Paste it into this index.html file (top of the <script> tag)' },
             ].map((x, i) => (
               <div key={i} style={{ display: "flex", gap: 14, marginBottom: i < 4 ? 16 : 0 }}>
                 <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#3b82f6", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{x.s}</div>
@@ -323,10 +345,8 @@ export default function Dashboard() {
   if (loading && !F) {
     return (
       <div style={{ minHeight: "100vh", background: "#0a0a12", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 14 }}>
-        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <div style={{ width: 36, height: 36, border: "3px solid rgba(59,130,246,0.15)", borderTop: "3px solid #3b82f6", borderRadius: "50%", animation: "sp 1s linear infinite" }} />
         <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 13, fontFamily: "'DM Sans'" }}>Fetching live data from your private sheets...</div>
-        <style>{`@keyframes sp { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
@@ -334,7 +354,6 @@ export default function Dashboard() {
   if (error) {
     return (
       <div style={{ minHeight: "100vh", background: "#0a0a12", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 14, fontFamily: "'DM Sans'", padding: 32 }}>
-        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <div style={{ fontSize: 36 }}>⚠️</div>
         <div style={{ color: "#ef4444", fontSize: 15, fontWeight: 600 }}>Connection Error</div>
         <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 12, textAlign: "center", maxWidth: 480, lineHeight: 1.6 }}>{error}</div>
@@ -350,7 +369,6 @@ export default function Dashboard() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#0a0a12", color: "#e2e2e2", fontFamily: "'DM Sans', sans-serif", padding: "18px 22px", maxWidth: 1200, margin: "0 auto" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
       {/* HEADER */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
@@ -512,3 +530,9 @@ export default function Dashboard() {
     </div>
   );
 }
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<Dashboard />);
+</script>
+</body>
+</html>

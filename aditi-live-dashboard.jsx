@@ -5,8 +5,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 //  PASTE YOUR GOOGLE APPS SCRIPT WEB APP URLs BELOW
 //  (See setup-guide.md for instructions)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const FIELD_SCRIPT_URL = "PASTE_YOUR_FIELD_SALES_SCRIPT_URL_HERE";
-const INSIDE_SCRIPT_URL = "PASTE_YOUR_INSIDE_SALES_SCRIPT_URL_HERE";
+const FIELD_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzhvgzH2FLx28sETY364A1FBxex0Qdy08EH7mzYO9_Do1FQnfrR4Q2f2wTqPUpyqNIYdA/exec";
+const INSIDE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxsC_glUfbC5RJSs0BPFYQI5jbsM5p6VeIraKcl-cO8zC8VjVnLqFYQuumhRP69oEy2/exec";
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const REFRESH_MS = 5 * 60 * 1000;

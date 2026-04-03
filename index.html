@@ -185,23 +185,56 @@ function setStatus(t,txt){document.getElementById('statusIndicator').innerHTML='
 function showError(m){document.getElementById('errorBanner').classList.remove('hidden');document.getElementById('errorText').textContent=m;}
 function hideError(){document.getElementById('errorBanner').classList.add('hidden');}
 
+async function fetchSheet(url){
+  const res = await fetch(url, {redirect:'follow'});
+  const text = await res.text();
+  try{
+    const json = JSON.parse(text);
+    if(Array.isArray(json)) return json;
+    // Google sometimes wraps in an object
+    if(json && typeof json === 'object'){
+      // Check common wrapper keys
+      for(const k of Object.keys(json)){
+        if(Array.isArray(json[k])) return json[k];
+      }
+    }
+    console.warn('API returned non-array:', typeof json, json);
+    return [];
+  }catch(e){
+    console.error('JSON parse failed. Raw response:', text.substring(0,500));
+    return [];
+  }
+}
+
 async function fetchAllData(){
   setStatus('loading','Fetching data...'); hideError();
   try{
     const[insRes,fldRes]=await Promise.allSettled([
-      fetch(INSIDE_SALES_API).then(r=>r.json()),
-      fetch(FIELD_SALES_API).then(r=>r.json())
+      fetchSheet(INSIDE_SALES_API),
+      fetchSheet(FIELD_SALES_API)
     ]);
     let iOk=false,fOk=false;
-    if(insRes.status==='fulfilled'){insideData=insRes.value;iOk=true;}else console.error('IS err:',insRes.reason);
-    if(fldRes.status==='fulfilled'){fieldData=fldRes.value;fOk=true;}else console.error('FS err:',fldRes.reason);
-    filteredInsideData=[...insideData]; filteredFieldData=[...fieldData];
+
+    if(insRes.status==='fulfilled' && Array.isArray(insRes.value)){
+      insideData=insRes.value; iOk=insideData.length>0;
+    }else{
+      insideData=[]; console.error('IS err:',insRes.reason||'empty/invalid response');
+    }
+
+    if(fldRes.status==='fulfilled' && Array.isArray(fldRes.value)){
+      fieldData=fldRes.value; fOk=fieldData.length>0;
+    }else{
+      fieldData=[]; console.error('FS err:',fldRes.reason||'empty/invalid response');
+    }
+
+    filteredInsideData=insideData.slice(); filteredFieldData=fieldData.slice();
+
     if(iOk&&fOk) setStatus('live','Live · '+(insideData.length+fieldData.length)+' records');
-    else if(iOk||fOk){setStatus('live','Partial · '+(insideData.length+fieldData.length)+' records');showError('One API failed. Showing available data.');}
-    else{setStatus('error','Failed');showError('Both APIs failed. Check network or redeploy.');}
+    else if(iOk||fOk){setStatus('live','Partial · '+(insideData.length+fieldData.length)+' records');showError('One API returned empty or failed. Showing available data.');}
+    else{setStatus('error','Failed');showError('Both APIs returned empty or failed. Open browser console (F12) for details.');}
     document.getElementById('lastUpdated').textContent='Updated '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     renderAll();
-  }catch(e){console.error(e);setStatus('error','Error');showError('Network error: '+e.message);}
+  }catch(e){console.error('Fetch error:',e);setStatus('error','Error');showError('Network error: '+e.message);}
 }
 
 function parseDate(v){
@@ -215,11 +248,11 @@ function parseDate(v){
 function applyFilters(){
   const fr=document.getElementById('dateFrom').value?new Date(document.getElementById('dateFrom').value):null;
   const to=document.getElementById('dateTo').value?new Date(document.getElementById('dateTo').value+'T23:59:59'):null;
-  filteredInsideData=insideData.filter(r=>{const d=parseDate(r['Timestamp']);if(!d)return true;if(fr&&d<fr)return false;if(to&&d>to)return false;return true;});
-  filteredFieldData=fieldData.filter(r=>{const d=parseDate(r['Timestamp']||r['Date']);if(!d)return true;if(fr&&d<fr)return false;if(to&&d>to)return false;return true;});
+  filteredInsideData=(Array.isArray(insideData)?insideData:[]).filter(r=>{const d=parseDate(r['Timestamp']);if(!d)return true;if(fr&&d<fr)return false;if(to&&d>to)return false;return true;});
+  filteredFieldData=(Array.isArray(fieldData)?fieldData:[]).filter(r=>{const d=parseDate(r['Timestamp']||r['Date']);if(!d)return true;if(fr&&d<fr)return false;if(to&&d>to)return false;return true;});
   renderAll();
 }
-function resetFilters(){document.getElementById('dateFrom').value='';document.getElementById('dateTo').value='';filteredInsideData=[...insideData];filteredFieldData=[...fieldData];renderAll();}
+function resetFilters(){document.getElementById('dateFrom').value='';document.getElementById('dateTo').value='';filteredInsideData=(Array.isArray(insideData)?insideData:[]).slice();filteredFieldData=(Array.isArray(fieldData)?fieldData:[]).slice();renderAll();}
 
 function switchTab(tab,el){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));el.classList.add('active');document.getElementById('sec-'+tab).classList.add('active');}
 

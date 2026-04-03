@@ -126,10 +126,23 @@
   .badge-amber { background:var(--amber-dim); color:var(--amber); }
   .badge-blue { background:var(--blue-dim); color:var(--blue); }
   .badge-purple { background:var(--purple-dim); color:var(--purple); }
+  .badge-accent { background:var(--accent-dim); color:var(--accent); }
   .split-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px; }
   .split-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:20px; }
   .split-card h3 { font-size:13px; font-weight:600; margin-bottom:16px; display:flex; align-items:center; gap:8px; }
   .split-card h3 .dot { width:10px; height:10px; border-radius:50%; }
+  /* Pipeline bar */
+  .pipeline-wrap { background: var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:20px; margin-bottom:24px; }
+  .pipeline-wrap h3 { font-size:14px; font-weight:600; margin-bottom:16px; color:var(--text-secondary); }
+  .pipeline { display:flex; align-items:stretch; gap:0; border-radius:10px; overflow:hidden; border:1px solid var(--border); }
+  .pipe-step { flex:1; padding:16px 14px; background:var(--bg-card-hover); position:relative; border-right:1px solid var(--border); }
+  .pipe-step:last-child { border-right:none; }
+  .pipe-step::after { content:'›'; position:absolute; right:-9px; top:50%; transform:translateY(-50%); color:var(--text-muted); font-size:18px; z-index:2; pointer-events:none; }
+  .pipe-step:last-child::after { display:none; }
+  .pipe-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.7px; color:var(--text-muted); margin-bottom:8px; }
+  .pipe-val { font-family:'JetBrains Mono'; font-size:22px; font-weight:700; }
+  .pipe-pct { font-size:11px; color:var(--text-muted); margin-top:3px; }
+  .pipe-bar { height:3px; border-radius:3px; margin-top:10px; opacity:0.7; }
   .loading-overlay { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:80px 20px; gap:16px; }
   .spinner { width:40px; height:40px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
@@ -141,6 +154,8 @@
     .charts-grid { grid-template-columns:1fr; } .split-grid { grid-template-columns:1fr; }
     .kpi-grid { grid-template-columns: repeat(2,1fr); }
     .tabs { width:100%; } .tab { flex:1; text-align:center; padding:10px 12px; font-size:13px; }
+    .pipeline { flex-direction:column; }
+    .pipe-step::after { display:none; }
   }
 </style>
 </head>
@@ -175,227 +190,537 @@
   <div class="section" id="sec-field"><div id="fieldContent"><div class="loading-overlay"><div class="spinner"></div><span style="color:var(--text-muted);font-size:13px;">Loading field sales...</span></div></div></div>
 </main>
 <script>
-// ========== HARDCODED API URLS ==========
+// ============================================================
+//  API ENDPOINTS
+// ============================================================
 const INSIDE_SALES_API = "https://script.google.com/macros/s/AKfycbxsC_glUfbC5RJSs0BPFYQI5jbsM5p6VeIraKcl-cO8zC8VjVnLqFYQuumhRP69oEy2/exec";
 const FIELD_SALES_API  = "https://script.google.com/macros/s/AKfycbyPgpnZ31W0qhSL3fVJOC0UbVadmwiZyaPcLpiGdYertNEkYIjNe6u5LVNEZIrSsF0u_Q/exec";
 
+// ============================================================
+//  STATE
+// ============================================================
 let insideData=[], fieldData=[], filteredInsideData=[], filteredFieldData=[], chartInstances={};
 
-function setStatus(t,txt){document.getElementById('statusIndicator').innerHTML='<span class="status-dot '+t+'"></span><span>'+txt+'</span>';}
-function showError(m){document.getElementById('errorBanner').classList.remove('hidden');document.getElementById('errorText').textContent=m;}
-function hideError(){document.getElementById('errorBanner').classList.add('hidden');}
+// ============================================================
+//  UTILITIES
+// ============================================================
+function setStatus(t,txt){ document.getElementById('statusIndicator').innerHTML='<span class="status-dot '+t+'"></span><span>'+txt+'</span>'; }
+function showError(m){ document.getElementById('errorBanner').classList.remove('hidden'); document.getElementById('errorText').textContent=m; }
+function hideError(){ document.getElementById('errorBanner').classList.add('hidden'); }
+function num(n){ return Number(n)||0; }
+function has(v){ return v!==null&&v!==undefined&&v!==''; }
+function isYes(v){ return v&&String(v).trim().toLowerCase()==='yes'; }
+function pct(a,b){ return b>0?((a/b)*100).toFixed(0)+'%':'—'; }
 
-async function fetchSheet(url){
-  const res = await fetch(url, {redirect:'follow'});
-  const text = await res.text();
-  try{
-    const json = JSON.parse(text);
-    if(Array.isArray(json)) return json;
-    // Google sometimes wraps in an object
-    if(json && typeof json === 'object'){
-      // Check common wrapper keys
-      for(const k of Object.keys(json)){
-        if(Array.isArray(json[k])) return json[k];
-      }
-    }
-    console.warn('API returned non-array:', typeof json, json);
-    return [];
-  }catch(e){
-    console.error('JSON parse failed. Raw response:', text.substring(0,500));
-    return [];
+function fmt(n){
+  if(n>=10000000) return '₹'+(n/10000000).toFixed(2)+' Cr';
+  if(n>=100000)   return '₹'+(n/100000).toFixed(1)+' L';
+  if(n>=1000)     return '₹'+(n/1000).toFixed(1)+'K';
+  return '₹'+n.toLocaleString('en-IN');
+}
+
+function parseDate(v){
+  if(!v) return null;
+  if(v instanceof Date) return isNaN(v)?null:v;
+  const s=String(v).trim();
+  const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if(m){ let y=parseInt(m[3]); if(y<100)y+=2000; const d=new Date(y,parseInt(m[2])-1,parseInt(m[1])); return isNaN(d)?null:d; }
+  const d=new Date(s); return isNaN(d.getTime())?null:d;
+}
+
+// Detect email column (checks multiple possible names)
+const EMAIL_FIELDS=['Email','email','Email ID','EmailID','Customer Email','Email Address','E-mail','EMail'];
+function getEmail(r){
+  for(const f of EMAIL_FIELDS) if(r[f]&&String(r[f]).trim()) return String(r[f]).trim().toLowerCase();
+  // Fallback: phone or customer name to identify same lead
+  return (r['Phone']||r['Mobile']||r['Customer Name']||'').toString().trim().toLowerCase();
+}
+
+function dc(id){ if(chartInstances[id]){ chartInstances[id].destroy(); delete chartInstances[id]; } }
+
+const cDef={
+  responsive:true, maintainAspectRatio:false,
+  plugins:{
+    legend:{labels:{color:'#94a3b8',font:{family:'DM Sans',size:11},padding:12,usePointStyle:true,pointStyleWidth:8}},
+    tooltip:{backgroundColor:'#1e293b',titleColor:'#f1f5f9',bodyColor:'#94a3b8',borderColor:'#2d3a4d',borderWidth:1,padding:10,titleFont:{family:'DM Sans',weight:'600'},bodyFont:{family:'DM Sans'},cornerRadius:8}
+  },
+  scales:{
+    x:{ticks:{color:'#64748b',font:{family:'DM Sans',size:11}},grid:{color:'rgba(30,41,59,0.5)'}},
+    y:{ticks:{color:'#64748b',font:{family:'DM Sans',size:11}},grid:{color:'rgba(30,41,59,0.5)'}}
   }
+};
+
+// ============================================================
+//  FETCH
+// ============================================================
+async function fetchSheet(url){
+  const res=await fetch(url,{redirect:'follow'});
+  const text=await res.text();
+  try{
+    const json=JSON.parse(text);
+    if(Array.isArray(json)) return json;
+    if(json&&typeof json==='object') for(const k of Object.keys(json)) if(Array.isArray(json[k])) return json[k];
+    console.warn('API non-array:',typeof json,json); return [];
+  }catch(e){ console.error('JSON parse fail. Raw:',text.substring(0,500)); return []; }
 }
 
 async function fetchAllData(){
   setStatus('loading','Fetching data...'); hideError();
   try{
-    const[insRes,fldRes]=await Promise.allSettled([
-      fetchSheet(INSIDE_SALES_API),
-      fetchSheet(FIELD_SALES_API)
-    ]);
+    const[insRes,fldRes]=await Promise.allSettled([fetchSheet(INSIDE_SALES_API),fetchSheet(FIELD_SALES_API)]);
     let iOk=false,fOk=false;
-
-    if(insRes.status==='fulfilled' && Array.isArray(insRes.value)){
-      insideData=insRes.value; iOk=insideData.length>0;
-    }else{
-      insideData=[]; console.error('IS err:',insRes.reason||'empty/invalid response');
-    }
-
-    if(fldRes.status==='fulfilled' && Array.isArray(fldRes.value)){
-      fieldData=fldRes.value; fOk=fieldData.length>0;
-    }else{
-      fieldData=[]; console.error('FS err:',fldRes.reason||'empty/invalid response');
-    }
-
+    if(insRes.status==='fulfilled'&&Array.isArray(insRes.value)){ insideData=insRes.value; iOk=insideData.length>0; }
+    else{ insideData=[]; console.error('IS err:',insRes.reason||'empty'); }
+    if(fldRes.status==='fulfilled'&&Array.isArray(fldRes.value)){ fieldData=fldRes.value; fOk=fieldData.length>0; }
+    else{ fieldData=[]; console.error('FS err:',fldRes.reason||'empty'); }
     filteredInsideData=insideData.slice(); filteredFieldData=fieldData.slice();
-
     if(iOk&&fOk) setStatus('live','Live · '+(insideData.length+fieldData.length)+' records');
-    else if(iOk||fOk){setStatus('live','Partial · '+(insideData.length+fieldData.length)+' records');showError('One API returned empty or failed. Showing available data.');}
-    else{setStatus('error','Failed');showError('Both APIs returned empty or failed. Open browser console (F12) for details.');}
+    else if(iOk||fOk){ setStatus('live','Partial · '+(insideData.length+fieldData.length)+' records'); showError('One API returned empty. Showing available data.'); }
+    else{ setStatus('error','Failed'); showError('Both APIs returned empty. Open browser console (F12) for details.'); }
     document.getElementById('lastUpdated').textContent='Updated '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     renderAll();
-  }catch(e){console.error('Fetch error:',e);setStatus('error','Error');showError('Network error: '+e.message);}
+  }catch(e){ console.error('Fetch error:',e); setStatus('error','Error'); showError('Network error: '+e.message); }
 }
 
-function parseDate(v){
-  if(!v)return null; if(v instanceof Date)return v;
-  const s=String(v).trim();
-  const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
-  if(m){let y=parseInt(m[3]);if(y<100)y+=2000;return new Date(y,parseInt(m[2])-1,parseInt(m[1]));}
-  const d=new Date(s);return isNaN(d.getTime())?null:d;
-}
-
+// ============================================================
+//  FILTERS
+// ============================================================
 function applyFilters(){
   const fr=document.getElementById('dateFrom').value?new Date(document.getElementById('dateFrom').value):null;
   const to=document.getElementById('dateTo').value?new Date(document.getElementById('dateTo').value+'T23:59:59'):null;
-  filteredInsideData=(Array.isArray(insideData)?insideData:[]).filter(r=>{const d=parseDate(r['Timestamp']);if(!d)return true;if(fr&&d<fr)return false;if(to&&d>to)return false;return true;});
-  filteredFieldData=(Array.isArray(fieldData)?fieldData:[]).filter(r=>{const d=parseDate(r['Timestamp']||r['Date']);if(!d)return true;if(fr&&d<fr)return false;if(to&&d>to)return false;return true;});
+  filteredInsideData=(insideData||[]).filter(r=>{const d=parseDate(r['Timestamp']);if(!d)return true;if(fr&&d<fr)return false;if(to&&d>to)return false;return true;});
+  filteredFieldData=(fieldData||[]).filter(r=>{const d=parseDate(r['Timestamp']||r['Date']);if(!d)return true;if(fr&&d<fr)return false;if(to&&d>to)return false;return true;});
   renderAll();
 }
-function resetFilters(){document.getElementById('dateFrom').value='';document.getElementById('dateTo').value='';filteredInsideData=(Array.isArray(insideData)?insideData:[]).slice();filteredFieldData=(Array.isArray(fieldData)?fieldData:[]).slice();renderAll();}
+function resetFilters(){
+  document.getElementById('dateFrom').value=''; document.getElementById('dateTo').value='';
+  filteredInsideData=insideData.slice(); filteredFieldData=fieldData.slice(); renderAll();
+}
+function switchTab(tab,el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  el.classList.add('active'); document.getElementById('sec-'+tab).classList.add('active');
+}
 
-function switchTab(tab,el){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));el.classList.add('active');document.getElementById('sec-'+tab).classList.add('active');}
-
-function fmt(n){if(n>=10000000)return'₹'+(n/10000000).toFixed(1)+' Cr';if(n>=100000)return'₹'+(n/100000).toFixed(1)+' L';if(n>=1000)return'₹'+(n/1000).toFixed(1)+'K';return'₹'+n.toLocaleString('en-IN');}
-function num(n){return Number(n)||0;}
-function isYes(v){return v&&String(v).trim().toLowerCase()==='yes';}
-function has(v){return v!==null&&v!==undefined&&v!=='';}
-function dc(id){if(chartInstances[id]){chartInstances[id].destroy();delete chartInstances[id];}}
-
-const cDef={responsive:true,maintainAspectRatio:false,
-  plugins:{legend:{labels:{color:'#94a3b8',font:{family:'DM Sans',size:11},padding:12,usePointStyle:true,pointStyleWidth:8}},tooltip:{backgroundColor:'#1e293b',titleColor:'#f1f5f9',bodyColor:'#94a3b8',borderColor:'#2d3a4d',borderWidth:1,padding:10,titleFont:{family:'DM Sans',weight:'600'},bodyFont:{family:'DM Sans'},cornerRadius:8}},
-  scales:{x:{ticks:{color:'#64748b',font:{family:'DM Sans',size:11}},grid:{color:'rgba(30,41,59,0.5)'}},y:{ticks:{color:'#64748b',font:{family:'DM Sans',size:11}},grid:{color:'rgba(30,41,59,0.5)'}}}
-};
-
+// ============================================================
+//  INSIDE SALES COMPUTATION
+// ============================================================
 function compIS(data){
+  // Build first-contact date map from the FULL (unfiltered) dataset
+  // so the 60-day rule is always measured from original first contact
+  const allIS = insideData.length>0 ? insideData : data;
+  const firstContact={};
+  allIS.forEach(r=>{
+    const em=getEmail(r); if(!em) return;
+    const d=parseDate(r['Timestamp']);
+    if(d&&(!firstContact[em]||d<firstContact[em])) firstContact[em]=d;
+  });
+
   const t=data.length;
-  const vl=data.filter(r=>String(r['Lead Quality']||'').toLowerCase()!=='junk'&&has(r['Customer Name'])).length;
-  const tc=data.filter(r=>has(r['1st Call'])||isYes(r['1st Call'])).length;
-  const dg=data.filter(r=>isYes(r['Is the Demo Given'])).length;
+
+  // NEW leads = first-ever appearance of that email/identifier
+  const seenNew=new Set();
+  let newLeads=0;
+  [...data].sort((a,b)=>(parseDate(a['Timestamp'])||0)-(parseDate(b['Timestamp'])||0))
+    .forEach(r=>{ const em=getEmail(r); if(!seenNew.has(em)){seenNew.add(em);newLeads++;} });
+
+  // FOLLOW-UP calls = rows where any follow-up column is filled
+  const followUps=data.filter(r=>
+    has(r['Follow-up 1 '])||has(r['Follow-up 1'])||
+    has(r['Follow-up 2 '])||has(r['Follow-up 2'])||
+    has(r['Follow-up 3'])
+  ).length;
+
+  const dg   = data.filter(r=>isYes(r['Is the Demo Given'])).length;
+  const qs   = data.filter(r=>isYes(r['Quotation Sent'])).length;
+  const wonRows = data.filter(r=>isYes(r['Won']));
+  const w    = wonRows.length;
+  const l    = data.filter(r=>has(r['Lost'])&&!isYes(r['Won'])).length;
+  const junk = data.filter(r=>String(r['Lead Quality']||'').toLowerCase()==='junk'||String(r['Remarks']||'').toLowerCase().includes('junk')).length;
+  const wr   = qs>0?((w/qs)*100).toFixed(1):0;
+
+  // NBD vs Existing — 60-day rule applied per closed deal
+  let totalRev=0, nbdRev=0, exRev=0, nbdWon=0, exWon=0;
+  wonRows.forEach(r=>{
+    const val=num(r['Order Value']); totalRev+=val;
+    const em=getEmail(r);
+    const firstD=firstContact[em];
+    const wonD=parseDate(r['Timestamp']);
+    const days=(firstD&&wonD)?(wonD-firstD)/86400000:0;
+    if(days<=60){ nbdRev+=val; nbdWon++; } else { exRev+=val; exWon++; }
+  });
+
+  const avg=w>0?totalRev/w:0;
+
+  // Lead temperature
+  const hot  = data.filter(r=>String(r['LeadType']||r['Lead Type']||'').toLowerCase()==='hot').length;
+  const warm = data.filter(r=>String(r['LeadType']||r['Lead Type']||'').toLowerCase()==='warm').length;
+  const cold = data.filter(r=>String(r['LeadType']||r['Lead Type']||'').toLowerCase()==='cold').length;
+
+  // Source / Solution maps
+  const src={}, sol={}, rbs={};
+  data.forEach(r=>{ const s=r['Source']||'Unknown'; src[s]=(src[s]||0)+1; });
+  data.forEach(r=>{ const s=r['Solution']||'Unknown'; sol[s]=(sol[s]||0)+1; });
+  wonRows.forEach(r=>{ const s=r['Source']||'Unknown'; rbs[s]=(rbs[s]||0)+num(r['Order Value']); });
+
+  // Follow-up breakdown
   const f1=data.filter(r=>has(r['Follow-up 1 '])||has(r['Follow-up 1'])).length;
   const f2=data.filter(r=>has(r['Follow-up 2 '])||has(r['Follow-up 2'])).length;
   const f3=data.filter(r=>has(r['Follow-up 3'])).length;
-  const qs=data.filter(r=>isYes(r['Quotation Sent'])).length;
-  const w=data.filter(r=>isYes(r['Won'])).length;
-  const l=data.filter(r=>has(r['Lost'])&&!isYes(r['Won'])).length;
-  const rev=data.reduce((s,r)=>s+num(r['Order Value']),0);
-  const hot=data.filter(r=>String(r['LeadType']||'').toLowerCase()==='hot').length;
-  const warm=data.filter(r=>String(r['LeadType']||'').toLowerCase()==='warm').length;
-  const cold=data.filter(r=>String(r['LeadType']||'').toLowerCase()==='cold').length;
-  const src={};data.forEach(r=>{const s=r['Source']||'Unknown';src[s]=(src[s]||0)+1;});
-  const sol={};data.forEach(r=>{const s=r['Solution']||'Unknown';sol[s]=(sol[s]||0)+1;});
-  const wr=qs>0?((w/qs)*100).toFixed(1):0;
-  const rbs={};data.filter(r=>isYes(r['Won'])).forEach(r=>{const s=r['Source']||'Unknown';rbs[s]=(rbs[s]||0)+num(r['Order Value']);});
-  const junk=data.filter(r=>String(r['Lead Quality']||'').toLowerCase()==='junk'||String(r['Remarks']||'').toLowerCase().includes('junk')).length;
-  const wd=data.filter(r=>isYes(r['Won'])&&num(r['Order Value'])>0);
-  const avg=wd.length>0?wd.reduce((s,r)=>s+num(r['Order Value']),0)/wd.length:0;
-  return{t,vl,tc,dg,f1,f2,f3,qs,w,l,rev,hot,warm,cold,src,sol,wr,rbs,junk,avg};
+
+  return{t,newLeads,followUps,f1,f2,f3,dg,qs,w,l,junk,wr,totalRev,nbdRev,exRev,nbdWon,exWon,avg,hot,warm,cold,src,sol,rbs,wonRows,firstContact};
 }
 
+// ============================================================
+//  FIELD SALES COMPUTATION
+// ============================================================
 function compFS(data){
   const t=data.length, pc='Purpose of Visit';
-  const nv=data.filter(r=>String(r[pc]||'').toLowerCase().includes('new')).length;
-  const ev=data.filter(r=>{const v=String(r[pc]||'').toLowerCase();return v.includes('exisiting')||v.includes('existing');}).length;
-  const fv=data.filter(r=>String(r[pc]||'').toLowerCase().includes('follow')).length;
-  const int=data.filter(r=>{const v=String(r['Winning Chances']||'').toLowerCase();return(v.includes('intersted')||v.includes('interested'))&&!v.includes('not');}).length;
-  const nint=data.filter(r=>String(r['Winning Chances']||'').toLowerCase().includes('not inter')).length;
-  const ter=data.reduce((s,r)=>{const v=num(r['Expected Revenue (₹)']||r['Expected Revenue']);return s+(v>1?v:0);},0);
-  const bsp={};data.forEach(r=>{const sp=r['Sales Person Name']||'Unknown';if(!bsp[sp])bsp[sp]={vis:0,nv:0,ev:0,rev:0};bsp[sp].vis++;if(String(r[pc]||'').toLowerCase().includes('new'))bsp[sp].nv++;if(String(r[pc]||'').toLowerCase().match(/exisit|exist/))bsp[sp].ev++;const v=num(r['Expected Revenue (₹)']||r['Expected Revenue']);bsp[sp].rev+=(v>1?v:0);});
-  const bpd={};data.forEach(r=>{const p=r['Product']||'Unknown';bpd[p]=(bpd[p]||0)+1;});
-  let nr=0,er=0;data.forEach(r=>{const v=num(r['Expected Revenue (₹)']||r['Expected Revenue']);if(v<=1)return;const p=String(r[pc]||'').toLowerCase();if(p.match(/exisit|exist/))er+=v;else nr+=v;});
-  return{t,nv,ev,fv,int,nint,ter,bsp,bpd,nr,er};
+  const nv = data.filter(r=>String(r[pc]||'').toLowerCase().includes('new')).length;
+  const ev = data.filter(r=>{ const v=String(r[pc]||'').toLowerCase(); return v.includes('exisit')||v.includes('exist'); }).length;
+  const fv = data.filter(r=>String(r[pc]||'').toLowerCase().includes('follow')).length;
+  const int_= data.filter(r=>{ const v=String(r['Winning Chances']||'').toLowerCase(); return (v.includes('intersted')||v.includes('interested'))&&!v.includes('not'); }).length;
+  const nint= data.filter(r=>String(r['Winning Chances']||'').toLowerCase().includes('not inter')).length;
+  const getER=r=>{ const v=num(r['Expected Revenue (₹)']||r['Expected Revenue']); return v>1?v:0; };
+  const ter=data.reduce((s,r)=>s+getER(r),0);
+  let nr=0,er=0;
+  data.forEach(r=>{ const v=getER(r); if(v===0)return; const p=String(r[pc]||'').toLowerCase(); if(p.match(/exisit|exist/))er+=v; else nr+=v; });
+  const bsp={};
+  data.forEach(r=>{
+    const sp=r['Sales Person Name']||r['Salesperson']||'Unknown';
+    if(!bsp[sp])bsp[sp]={vis:0,nv:0,ev:0,fv:0,rev:0};
+    bsp[sp].vis++; bsp[sp].rev+=getER(r);
+    const p=String(r[pc]||'').toLowerCase();
+    if(p.includes('new'))bsp[sp].nv++;
+    if(p.match(/exisit|exist/))bsp[sp].ev++;
+    if(p.includes('follow'))bsp[sp].fv++;
+  });
+  const bpd={};
+  data.forEach(r=>{ const p=r['Product']||'Unknown'; bpd[p]=(bpd[p]||0)+1; });
+  return{t,nv,ev,fv,int_,nint,ter,nr,er,bsp,bpd};
 }
 
-function renderAll(){renderOV();renderIS();renderFS();}
+// ============================================================
+//  RENDER ALL
+// ============================================================
+function renderAll(){ renderOV(); renderIS(); renderFS(); }
 
+// ============================================================
+//  OVERVIEW TAB
+// ============================================================
 function renderOV(){
-  const i=compIS(filteredInsideData),f=compFS(filteredFieldData);
+  const i=compIS(filteredInsideData), f=compFS(filteredFieldData);
   document.getElementById('overviewContent').innerHTML=`
     <div class="kpi-grid">
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--accent-dim);color:var(--accent);">📞</div><div class="kpi-label">Inside Sales Leads</div><div class="kpi-value">${i.t}</div><div class="kpi-sub">Valid: ${i.vl} · Junk: ${i.junk}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--blue-dim);color:var(--blue);">🚗</div><div class="kpi-label">Field Visits</div><div class="kpi-value">${f.t}</div><div class="kpi-sub">New: ${f.nv} · Existing: ${f.ev}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">✅</div><div class="kpi-label">Deals Won (IS)</div><div class="kpi-value">${i.w}</div><div class="kpi-sub">Win Rate: ${i.wr}%</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--red-dim);color:var(--red);">❌</div><div class="kpi-label">Deals Lost (IS)</div><div class="kpi-value">${i.l}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">💰</div><div class="kpi-label">IS Revenue (Won)</div><div class="kpi-value" style="color:var(--green);">${fmt(i.rev)}</div><div class="kpi-sub">Avg deal: ${fmt(Math.round(i.avg))}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--purple-dim);color:var(--purple);">📊</div><div class="kpi-label">FS Expected Revenue</div><div class="kpi-value" style="color:var(--purple);">${fmt(f.ter)}</div><div class="kpi-sub">NBD: ${fmt(f.nr)} · Exist: ${fmt(f.er)}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--amber-dim);color:var(--amber);">📨</div><div class="kpi-label">Quotations Sent (IS)</div><div class="kpi-value">${i.qs}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--orange-dim);color:var(--orange);">👍</div><div class="kpi-label">FS Interest Rate</div><div class="kpi-value">${f.t>0?((f.int/f.t)*100).toFixed(0):0}%</div><div class="kpi-sub">${f.int} of ${f.t}</div></div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--accent-dim);color:var(--accent);">📞</div>
+        <div class="kpi-label">Inside Sales Leads</div>
+        <div class="kpi-value">${i.t}</div>
+        <div class="kpi-sub">New: ${i.newLeads} · Follow-up: ${i.followUps} · Junk: ${i.junk}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--blue-dim);color:var(--blue);">🚗</div>
+        <div class="kpi-label">Field Visits</div>
+        <div class="kpi-value">${f.t}</div>
+        <div class="kpi-sub">New: ${f.nv} · Existing: ${f.ev} · Follow-up: ${f.fv}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">✅</div>
+        <div class="kpi-label">Closures (IS)</div>
+        <div class="kpi-value">${i.w}</div>
+        <div class="kpi-sub">Win Rate: ${i.wr}% · NBD: ${i.nbdWon} · Existing: ${i.exWon}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--red-dim);color:var(--red);">❌</div>
+        <div class="kpi-label">Deals Lost (IS)</div>
+        <div class="kpi-value">${i.l}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">💰</div>
+        <div class="kpi-label">IS Revenue (Closed)</div>
+        <div class="kpi-value" style="color:var(--green);">${fmt(i.totalRev)}</div>
+        <div class="kpi-sub">NBD: ${fmt(i.nbdRev)} · Existing: ${fmt(i.exRev)}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--purple-dim);color:var(--purple);">📊</div>
+        <div class="kpi-label">FS Expected Revenue</div>
+        <div class="kpi-value" style="color:var(--purple);">${fmt(f.ter)}</div>
+        <div class="kpi-sub">NBD: ${fmt(f.nr)} · Existing: ${fmt(f.er)}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--amber-dim);color:var(--amber);">📨</div>
+        <div class="kpi-label">Quotations Sent (IS)</div>
+        <div class="kpi-value">${i.qs}</div>
+        <div class="kpi-sub">${i.w} closed from quotes</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--orange-dim);color:var(--orange);">👍</div>
+        <div class="kpi-label">FS Interest Rate</div>
+        <div class="kpi-value">${f.t>0?((f.int_/f.t)*100).toFixed(0):0}%</div>
+        <div class="kpi-sub">${f.int_} of ${f.t} visits</div>
+      </div>
     </div>
+
+    <div class="pipeline-wrap">
+      <h3>Inside Sales — Pipeline (Discovery → Closure)</h3>
+      <div class="pipeline">
+        ${[
+          {label:'Total Calls',  val:i.t,         base:i.t,        col:'var(--accent)'},
+          {label:'New Discovery',val:i.newLeads,  base:i.t,        col:'var(--blue)'},
+          {label:'Follow-up',    val:i.followUps, base:i.t,        col:'var(--purple)'},
+          {label:'Demo Given',   val:i.dg,        base:i.newLeads, col:'var(--amber)'},
+          {label:'Quotation',    val:i.qs,        base:i.dg,       col:'var(--orange)'},
+          {label:'Closure ✅',   val:i.w,         base:i.qs,       col:'var(--green)'},
+        ].map(s=>`
+          <div class="pipe-step">
+            <div class="pipe-label">${s.label}</div>
+            <div class="pipe-val" style="color:${s.col}">${s.val}</div>
+            <div class="pipe-pct">${s.label==='Total Calls'?'100%':pct(s.val,s.base)+' of prev'}</div>
+            <div class="pipe-bar" style="background:${s.col};width:${Math.min(100,s.base>0?(s.val/s.base)*100:0)}%;"></div>
+          </div>`).join('')}
+      </div>
+    </div>
+
     <div class="charts-grid">
-      <div class="chart-card"><h3>Inside Sales — Conversion Funnel</h3><div class="chart-container" style="height:280px;"><canvas id="c1"></canvas></div></div>
-      <div class="chart-card"><h3>Inside Sales — Lead Temperature</h3><div class="chart-container" style="height:280px;"><canvas id="c2"></canvas></div></div>
+      <div class="chart-card"><h3>Inside Sales — Lead Temperature</h3><div class="chart-container" style="height:280px;"><canvas id="c1"></canvas></div></div>
+      <div class="chart-card"><h3>Inside Sales — NBD vs Existing Deals</h3><div class="chart-container" style="height:280px;"><canvas id="c2"></canvas></div></div>
       <div class="chart-card"><h3>Inside Sales — Lead Sources</h3><div class="chart-container" style="height:280px;"><canvas id="c3"></canvas></div></div>
       <div class="chart-card"><h3>Field Sales — Visit Breakdown</h3><div class="chart-container" style="height:280px;"><canvas id="c4"></canvas></div></div>
     </div>`;
-  dc('c1');chartInstances['c1']=new Chart(document.getElementById('c1'),{type:'bar',data:{labels:['Leads','1st Call','Demo','Quotation','Won'],datasets:[{data:[i.t,i.tc,i.dg,i.qs,i.w],backgroundColor:['#60a5fa','#22d3ee','#a78bfa','#fbbf24','#34d399'],borderRadius:6,barThickness:36}]},options:{...cDef,indexAxis:'y',plugins:{...cDef.plugins,legend:{display:false}}}});
-  dc('c2');chartInstances['c2']=new Chart(document.getElementById('c2'),{type:'doughnut',data:{labels:['Hot 🔥','Warm 🌤','Cold ❄️'],datasets:[{data:[i.hot,i.warm,i.cold],backgroundColor:['#f87171','#fbbf24','#60a5fa'],borderWidth:0,hoverOffset:8}]},options:{...cDef,scales:{},cutout:'65%'}});
-  dc('c3');const sl=Object.keys(i.src).sort((a,b)=>i.src[b]-i.src[a]).slice(0,10);chartInstances['c3']=new Chart(document.getElementById('c3'),{type:'bar',data:{labels:sl,datasets:[{data:sl.map(l=>i.src[l]),backgroundColor:'#22d3ee',borderRadius:4,barThickness:24}]},options:{...cDef,plugins:{...cDef.plugins,legend:{display:false}}}});
-  dc('c4');chartInstances['c4']=new Chart(document.getElementById('c4'),{type:'doughnut',data:{labels:['New (NBD)','Existing','Follow-up'],datasets:[{data:[f.nv,f.ev,f.fv],backgroundColor:['#22d3ee','#a78bfa','#fbbf24'],borderWidth:0,hoverOffset:8}]},options:{...cDef,scales:{},cutout:'65%'}});
+
+  dc('c1'); chartInstances['c1']=new Chart(document.getElementById('c1'),{type:'doughnut',data:{labels:['Hot 🔥','Warm 🌤','Cold ❄️'],datasets:[{data:[i.hot,i.warm,i.cold],backgroundColor:['#f87171','#fbbf24','#60a5fa'],borderWidth:0,hoverOffset:8}]},options:{...cDef,scales:{},cutout:'65%'}});
+  dc('c2'); chartInstances['c2']=new Chart(document.getElementById('c2'),{type:'doughnut',data:{labels:[`NBD ≤60d (${i.nbdWon})`,`Existing >60d (${i.exWon})`],datasets:[{data:[i.nbdWon,i.exWon],backgroundColor:['#22d3ee','#a78bfa'],borderWidth:0,hoverOffset:8}]},options:{...cDef,scales:{},cutout:'65%'}});
+  const sl=Object.keys(i.src).sort((a,b)=>i.src[b]-i.src[a]).slice(0,10);
+  dc('c3'); chartInstances['c3']=new Chart(document.getElementById('c3'),{type:'bar',data:{labels:sl,datasets:[{data:sl.map(l=>i.src[l]),backgroundColor:'#22d3ee',borderRadius:4,barThickness:24}]},options:{...cDef,plugins:{...cDef.plugins,legend:{display:false}}}});
+  dc('c4'); chartInstances['c4']=new Chart(document.getElementById('c4'),{type:'doughnut',data:{labels:['New (NBD)','Existing','Follow-up'],datasets:[{data:[f.nv,f.ev,f.fv],backgroundColor:['#22d3ee','#a78bfa','#fbbf24'],borderWidth:0,hoverOffset:8}]},options:{...cDef,scales:{},cutout:'65%'}});
 }
 
+// ============================================================
+//  INSIDE SALES TAB
+// ============================================================
 function renderIS(){
   const i=compIS(filteredInsideData);
   document.getElementById('insideContent').innerHTML=`
-    <div class="kpi-grid">
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--accent-dim);color:var(--accent);">📋</div><div class="kpi-label">Total Leads</div><div class="kpi-value">${i.t}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--blue-dim);color:var(--blue);">📞</div><div class="kpi-label">1st Call Done</div><div class="kpi-value">${i.tc}</div><div class="kpi-sub">${i.t>0?((i.tc/i.t)*100).toFixed(0):0}% of leads</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--purple-dim);color:var(--purple);">🎯</div><div class="kpi-label">Demo Given</div><div class="kpi-value">${i.dg}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--amber-dim);color:var(--amber);">🔄</div><div class="kpi-label">Follow-ups</div><div class="kpi-value">${i.f1}</div><div class="kpi-sub">F2: ${i.f2} · F3: ${i.f3}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--orange-dim);color:var(--orange);">📨</div><div class="kpi-label">Quotation Sent</div><div class="kpi-value">${i.qs}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">✅</div><div class="kpi-label">Won</div><div class="kpi-value" style="color:var(--green);">${i.w}</div><div class="kpi-sub">Win Rate: ${i.wr}%</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--red-dim);color:var(--red);">❌</div><div class="kpi-label">Lost / Junk</div><div class="kpi-value" style="color:var(--red);">${i.l}</div><div class="kpi-sub">Junk: ${i.junk}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">💰</div><div class="kpi-label">Total Revenue</div><div class="kpi-value" style="color:var(--green);">${fmt(i.rev)}</div><div class="kpi-sub">Avg: ${fmt(Math.round(i.avg))}</div></div>
+    <div class="pipeline-wrap">
+      <h3>Full Conversion Pipeline — Discovery → Demo → Quotation → Closure</h3>
+      <div class="pipeline">
+        ${[
+          {label:'Total Calls',  val:i.t,         base:i.t,        col:'var(--accent)'},
+          {label:'New Discovery',val:i.newLeads,  base:i.t,        col:'var(--blue)'},
+          {label:'Follow-up',    val:i.followUps, base:i.t,        col:'var(--purple)'},
+          {label:'Demo Given',   val:i.dg,        base:i.newLeads, col:'var(--amber)'},
+          {label:'Quotation',    val:i.qs,        base:i.dg,       col:'var(--orange)'},
+          {label:'Closure ✅',   val:i.w,         base:i.qs,       col:'var(--green)'},
+        ].map(s=>`
+          <div class="pipe-step">
+            <div class="pipe-label">${s.label}</div>
+            <div class="pipe-val" style="color:${s.col}">${s.val}</div>
+            <div class="pipe-pct">${s.label==='Total Calls'?'100%':pct(s.val,s.base)+' of prev'}</div>
+            <div class="pipe-bar" style="background:${s.col};width:${Math.min(100,s.base>0?(s.val/s.base)*100:0)}%;"></div>
+          </div>`).join('')}
+      </div>
     </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--accent-dim);color:var(--accent);">📋</div>
+        <div class="kpi-label">Total Calls</div>
+        <div class="kpi-value">${i.t}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--blue-dim);color:var(--blue);">🆕</div>
+        <div class="kpi-label">New Discovery Calls</div>
+        <div class="kpi-value">${i.newLeads}</div>
+        <div class="kpi-sub">${pct(i.newLeads,i.t)} of total</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--purple-dim);color:var(--purple);">🔄</div>
+        <div class="kpi-label">Follow-up Calls</div>
+        <div class="kpi-value">${i.followUps}</div>
+        <div class="kpi-sub">F1: ${i.f1} · F2: ${i.f2} · F3: ${i.f3}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--amber-dim);color:var(--amber);">🎯</div>
+        <div class="kpi-label">Demo Given</div>
+        <div class="kpi-value">${i.dg}</div>
+        <div class="kpi-sub">${pct(i.dg,i.newLeads)} of new leads</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--orange-dim);color:var(--orange);">📨</div>
+        <div class="kpi-label">Quotation Sent</div>
+        <div class="kpi-value">${i.qs}</div>
+        <div class="kpi-sub">${pct(i.qs,i.dg)} from demo</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">✅</div>
+        <div class="kpi-label">Closure (Won)</div>
+        <div class="kpi-value" style="color:var(--green);">${i.w}</div>
+        <div class="kpi-sub">Win Rate: ${i.wr}% · Avg: ${fmt(Math.round(i.avg))}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--red-dim);color:var(--red);">❌</div>
+        <div class="kpi-label">Lost / Junk</div>
+        <div class="kpi-value" style="color:var(--red);">${i.l}</div>
+        <div class="kpi-sub">Junk: ${i.junk}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">💰</div>
+        <div class="kpi-label">Total Revenue</div>
+        <div class="kpi-value" style="color:var(--green);">${fmt(i.totalRev)}</div>
+        <div class="kpi-sub">Avg deal: ${fmt(Math.round(i.avg))}</div>
+      </div>
+    </div>
+
+    <div class="split-grid">
+      <div class="split-card">
+        <h3><span class="dot" style="background:var(--accent);"></span>NBD Revenue <small style="font-size:11px;color:var(--text-muted);font-weight:400;">(Closed ≤ 60 days from first contact)</small></h3>
+        <div style="font-size:32px;font-weight:700;font-family:'JetBrains Mono';color:var(--accent);">${fmt(i.nbdRev)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">${i.nbdWon} deals · ${pct(i.nbdWon,i.w)} of closures</div>
+      </div>
+      <div class="split-card">
+        <h3><span class="dot" style="background:var(--purple);"></span>Existing Client Revenue <small style="font-size:11px;color:var(--text-muted);font-weight:400;">(Closed > 60 days from first contact)</small></h3>
+        <div style="font-size:32px;font-weight:700;font-family:'JetBrains Mono';color:var(--purple);">${fmt(i.exRev)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">${i.exWon} deals · ${pct(i.exWon,i.w)} of closures</div>
+      </div>
+    </div>
+
     <div class="charts-grid">
-      <div class="chart-card"><h3>Full Conversion Funnel</h3><div class="chart-container" style="height:300px;"><canvas id="c5"></canvas></div></div>
+      <div class="chart-card"><h3>Full Funnel Breakdown</h3><div class="chart-container" style="height:300px;"><canvas id="c5"></canvas></div></div>
       <div class="chart-card"><h3>Revenue by Source</h3><div class="chart-container" style="height:300px;"><canvas id="c6"></canvas></div></div>
       <div class="chart-card"><h3>Solution Breakdown</h3><div class="chart-container" style="height:300px;"><canvas id="c7"></canvas></div></div>
       <div class="chart-card"><h3>Lead Source Distribution</h3><div class="chart-container" style="height:300px;"><canvas id="c8"></canvas></div></div>
     </div>
-    <div class="table-card"><h3>Recent Won Deals</h3><table><thead><tr><th>Customer</th><th>Source</th><th>Solution</th><th>Product</th><th>Order Value</th></tr></thead><tbody>
-      ${filteredInsideData.filter(r=>isYes(r['Won'])).slice(-20).reverse().map(r=>'<tr><td style="color:var(--text-primary);font-weight:500;">'+( r['Customer Name']||'-')+'</td><td><span class="badge badge-blue">'+(r['Source']||'-')+'</span></td><td>'+(r['Solution']||'-')+'</td><td>'+(r['Hero Product']||'-')+'</td><td style="color:var(--green);font-weight:600;font-family:JetBrains Mono;">₹'+num(r['Order Value']).toLocaleString('en-IN')+'</td></tr>').join('')}
-    </tbody></table></div>`;
-  dc('c5');chartInstances['c5']=new Chart(document.getElementById('c5'),{type:'bar',data:{labels:['Leads','1st Call','Demo','F/U 1','F/U 2','F/U 3','Quotation','Won'],datasets:[{data:[i.t,i.tc,i.dg,i.f1,i.f2,i.f3,i.qs,i.w],backgroundColor:['#60a5fa','#38bdf8','#22d3ee','#a78bfa','#818cf8','#c084fc','#fbbf24','#34d399'],borderRadius:6,barThickness:28}]},options:{...cDef,plugins:{...cDef.plugins,legend:{display:false}}}});
-  dc('c6');const rl=Object.keys(i.rbs).sort((a,b)=>i.rbs[b]-i.rbs[a]);chartInstances['c6']=new Chart(document.getElementById('c6'),{type:'bar',data:{labels:rl,datasets:[{data:rl.map(l=>i.rbs[l]),backgroundColor:'#34d399',borderRadius:4,barThickness:28}]},options:{...cDef,plugins:{...cDef.plugins,legend:{display:false}}}});
-  dc('c7');const soll=Object.keys(i.sol).sort((a,b)=>i.sol[b]-i.sol[a]);chartInstances['c7']=new Chart(document.getElementById('c7'),{type:'doughnut',data:{labels:soll,datasets:[{data:soll.map(l=>i.sol[l]),backgroundColor:['#22d3ee','#a78bfa','#fbbf24','#f87171','#34d399','#fb923c','#60a5fa'],borderWidth:0}]},options:{...cDef,scales:{},cutout:'60%'}});
-  dc('c8');const sdl=Object.keys(i.src).sort((a,b)=>i.src[b]-i.src[a]);chartInstances['c8']=new Chart(document.getElementById('c8'),{type:'doughnut',data:{labels:sdl,datasets:[{data:sdl.map(l=>i.src[l]),backgroundColor:['#22d3ee','#a78bfa','#fbbf24','#f87171','#34d399','#fb923c','#60a5fa','#e879f9'],borderWidth:0}]},options:{...cDef,scales:{},cutout:'60%'}});
+
+    <div class="table-card">
+      <h3>Recent Closures</h3>
+      <table><thead><tr>
+        <th>Customer</th><th>Source</th><th>Solution</th><th>Product</th><th>Type</th><th>Order Value</th>
+      </tr></thead><tbody>
+        ${filteredInsideData.filter(r=>isYes(r['Won'])).slice(-25).reverse().map(r=>{
+          const em=getEmail(r), fc=i.firstContact[em];
+          const wonD=parseDate(r['Timestamp']); const days=(fc&&wonD)?(wonD-fc)/86400000:0;
+          const isNBD=days<=60;
+          return '<tr>'
+            +'<td style="color:var(--text-primary);font-weight:500;">'+(r['Customer Name']||'—')+'</td>'
+            +'<td><span class="badge badge-blue">'+(r['Source']||'—')+'</span></td>'
+            +'<td>'+(r['Solution']||'—')+'</td>'
+            +'<td>'+(r['Hero Product']||'—')+'</td>'
+            +'<td><span class="badge '+(isNBD?'badge-accent':'badge-purple')+'">'+(isNBD?'NBD':'Existing')+'</span></td>'
+            +'<td style="color:var(--green);font-weight:600;font-family:JetBrains Mono;">₹'+num(r['Order Value']).toLocaleString('en-IN')+'</td>'
+            +'</tr>';
+        }).join('')}
+      </tbody></table>
+    </div>`;
+
+  dc('c5'); chartInstances['c5']=new Chart(document.getElementById('c5'),{type:'bar',data:{labels:['Total','New','Follow-up','Demo','Quotation','Closure'],datasets:[{data:[i.t,i.newLeads,i.followUps,i.dg,i.qs,i.w],backgroundColor:['#22d3ee','#60a5fa','#a78bfa','#fbbf24','#fb923c','#34d399'],borderRadius:6,barThickness:30}]},options:{...cDef,plugins:{...cDef.plugins,legend:{display:false}}}});
+  const rl=Object.keys(i.rbs).sort((a,b)=>i.rbs[b]-i.rbs[a]);
+  dc('c6'); chartInstances['c6']=new Chart(document.getElementById('c6'),{type:'bar',data:{labels:rl,datasets:[{data:rl.map(l=>i.rbs[l]),backgroundColor:'#34d399',borderRadius:4,barThickness:28}]},options:{...cDef,plugins:{...cDef.plugins,legend:{display:false}}}});
+  const soll=Object.keys(i.sol).sort((a,b)=>i.sol[b]-i.sol[a]);
+  dc('c7'); chartInstances['c7']=new Chart(document.getElementById('c7'),{type:'doughnut',data:{labels:soll,datasets:[{data:soll.map(l=>i.sol[l]),backgroundColor:['#22d3ee','#a78bfa','#fbbf24','#f87171','#34d399','#fb923c','#60a5fa'],borderWidth:0}]},options:{...cDef,scales:{},cutout:'60%'}});
+  const sdl=Object.keys(i.src).sort((a,b)=>i.src[b]-i.src[a]);
+  dc('c8'); chartInstances['c8']=new Chart(document.getElementById('c8'),{type:'doughnut',data:{labels:sdl,datasets:[{data:sdl.map(l=>i.src[l]),backgroundColor:['#22d3ee','#a78bfa','#fbbf24','#f87171','#34d399','#fb923c','#60a5fa','#e879f9'],borderWidth:0}]},options:{...cDef,scales:{},cutout:'60%'}});
 }
 
+// ============================================================
+//  FIELD SALES TAB
+// ============================================================
 function renderFS(){
   const f=compFS(filteredFieldData);
   const sp=Object.entries(f.bsp).sort((a,b)=>b[1].vis-a[1].vis);
   const pd=Object.entries(f.bpd).sort((a,b)=>b[1]-a[1]).slice(0,10);
   document.getElementById('fieldContent').innerHTML=`
     <div class="kpi-grid">
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--accent-dim);color:var(--accent);">🚗</div><div class="kpi-label">Total Visits</div><div class="kpi-value">${f.t}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">🆕</div><div class="kpi-label">New (NBD)</div><div class="kpi-value" style="color:var(--green);">${f.nv}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--purple-dim);color:var(--purple);">🔄</div><div class="kpi-label">Existing</div><div class="kpi-value" style="color:var(--purple);">${f.ev}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--amber-dim);color:var(--amber);">📞</div><div class="kpi-label">Follow-up</div><div class="kpi-value" style="color:var(--amber);">${f.fv}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">👍</div><div class="kpi-label">Interested</div><div class="kpi-value">${f.int}</div><div class="kpi-sub">${f.t>0?((f.int/f.t)*100).toFixed(0):0}% rate</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--red-dim);color:var(--red);">👎</div><div class="kpi-label">Not Interested</div><div class="kpi-value" style="color:var(--red);">${f.nint}</div></div>
-      <div class="kpi-card"><div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">💰</div><div class="kpi-label">Expected Revenue</div><div class="kpi-value" style="color:var(--green);">${fmt(f.ter)}</div></div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--accent-dim);color:var(--accent);">🚗</div>
+        <div class="kpi-label">Total Visits</div>
+        <div class="kpi-value">${f.t}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">🆕</div>
+        <div class="kpi-label">New Visits (NBD)</div>
+        <div class="kpi-value" style="color:var(--green);">${f.nv}</div>
+        <div class="kpi-sub">${pct(f.nv,f.t)} of total</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--purple-dim);color:var(--purple);">🔄</div>
+        <div class="kpi-label">Existing Client</div>
+        <div class="kpi-value" style="color:var(--purple);">${f.ev}</div>
+        <div class="kpi-sub">${pct(f.ev,f.t)} of total</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--amber-dim);color:var(--amber);">📞</div>
+        <div class="kpi-label">Follow-up Visits</div>
+        <div class="kpi-value" style="color:var(--amber);">${f.fv}</div>
+        <div class="kpi-sub">${pct(f.fv,f.t)} of total</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">👍</div>
+        <div class="kpi-label">Interested</div>
+        <div class="kpi-value">${f.int_}</div>
+        <div class="kpi-sub">${pct(f.int_,f.t)} interest rate</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--red-dim);color:var(--red);">👎</div>
+        <div class="kpi-label">Not Interested</div>
+        <div class="kpi-value" style="color:var(--red);">${f.nint}</div>
+        <div class="kpi-sub">${pct(f.nint,f.t)} rejection rate</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">💰</div>
+        <div class="kpi-label">Expected Revenue</div>
+        <div class="kpi-value" style="color:var(--green);">${fmt(f.ter)}</div>
+        <div class="kpi-sub">Pipeline value</div>
+      </div>
     </div>
+
     <div class="split-grid">
-      <div class="split-card"><h3><span class="dot" style="background:var(--green);"></span> NBD Revenue</h3><div style="font-size:32px;font-weight:700;font-family:'JetBrains Mono';color:var(--green);">${fmt(f.nr)}</div></div>
-      <div class="split-card"><h3><span class="dot" style="background:var(--purple);"></span> Existing Revenue</h3><div style="font-size:32px;font-weight:700;font-family:'JetBrains Mono';color:var(--purple);">${fmt(f.er)}</div></div>
+      <div class="split-card">
+        <h3><span class="dot" style="background:var(--green);"></span>NBD Expected Revenue</h3>
+        <div style="font-size:32px;font-weight:700;font-family:'JetBrains Mono';color:var(--green);">${fmt(f.nr)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">From new client visits</div>
+      </div>
+      <div class="split-card">
+        <h3><span class="dot" style="background:var(--purple);"></span>Existing Client Revenue</h3>
+        <div style="font-size:32px;font-weight:700;font-family:'JetBrains Mono';color:var(--purple);">${fmt(f.er)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">From existing client visits</div>
+      </div>
     </div>
+
     <div class="charts-grid">
       <div class="chart-card"><h3>Visit Type Breakdown</h3><div class="chart-container" style="height:280px;"><canvas id="c9"></canvas></div></div>
       <div class="chart-card"><h3>Product Demand</h3><div class="chart-container" style="height:280px;"><canvas id="c10"></canvas></div></div>
-      <div class="chart-card"><h3>Visits by Salesperson</h3><div class="chart-container" style="height:280px;"><canvas id="c11"></canvas></div></div>
+      <div class="chart-card"><h3>Visits by Salesperson (Stacked)</h3><div class="chart-container" style="height:280px;"><canvas id="c11"></canvas></div></div>
       <div class="chart-card"><h3>Revenue by Salesperson</h3><div class="chart-container" style="height:280px;"><canvas id="c12"></canvas></div></div>
     </div>
-    <div class="table-card"><h3>Salesperson Performance</h3><table><thead><tr><th>Salesperson</th><th>Total Visits</th><th>New (NBD)</th><th>Existing</th><th>Exp. Revenue</th></tr></thead><tbody>
-      ${sp.map(([n,d])=>'<tr><td style="color:var(--text-primary);font-weight:500;">'+n+'</td><td>'+d.vis+'</td><td><span class="badge badge-green">'+d.nv+'</span></td><td><span class="badge badge-purple">'+d.ev+'</span></td><td style="color:var(--green);font-family:JetBrains Mono;">'+fmt(d.rev)+'</td></tr>').join('')}
-    </tbody></table></div>`;
-  dc('c9');chartInstances['c9']=new Chart(document.getElementById('c9'),{type:'doughnut',data:{labels:['New (NBD)','Existing','Follow-up'],datasets:[{data:[f.nv,f.ev,f.fv],backgroundColor:['#34d399','#a78bfa','#fbbf24'],borderWidth:0,hoverOffset:8}]},options:{...cDef,scales:{},cutout:'65%'}});
-  dc('c10');chartInstances['c10']=new Chart(document.getElementById('c10'),{type:'bar',data:{labels:pd.map(e=>e[0]),datasets:[{data:pd.map(e=>e[1]),backgroundColor:'#22d3ee',borderRadius:4,barThickness:24}]},options:{...cDef,plugins:{...cDef.plugins,legend:{display:false}}}});
-  dc('c11');const sn=sp.map(e=>e[0]);chartInstances['c11']=new Chart(document.getElementById('c11'),{type:'bar',data:{labels:sn,datasets:[{label:'New',data:sn.map(n=>f.bsp[n].nv),backgroundColor:'#34d399',borderRadius:4},{label:'Existing',data:sn.map(n=>f.bsp[n].ev),backgroundColor:'#a78bfa',borderRadius:4}]},options:{...cDef,scales:{...cDef.scales,x:{...cDef.scales.x,stacked:true},y:{...cDef.scales.y,stacked:true}}}});
-  dc('c12');const sr=sp.filter(e=>e[1].rev>0).sort((a,b)=>b[1].rev-a[1].rev);chartInstances['c12']=new Chart(document.getElementById('c12'),{type:'bar',data:{labels:sr.map(e=>e[0]),datasets:[{data:sr.map(e=>e[1].rev),backgroundColor:'#fbbf24',borderRadius:4,barThickness:28}]},options:{...cDef,indexAxis:'y',plugins:{...cDef.plugins,legend:{display:false}}}});
+
+    <div class="table-card">
+      <h3>Salesperson Performance</h3>
+      <table><thead><tr>
+        <th>Salesperson</th><th>Total Visits</th><th>New (NBD)</th><th>Existing</th><th>Follow-up</th><th>Exp. Revenue</th>
+      </tr></thead><tbody>
+        ${sp.map(([n,d])=>'<tr>'
+          +'<td style="color:var(--text-primary);font-weight:500;">'+n+'</td>'
+          +'<td>'+d.vis+'</td>'
+          +'<td><span class="badge badge-green">'+d.nv+'</span></td>'
+          +'<td><span class="badge badge-purple">'+d.ev+'</span></td>'
+          +'<td><span class="badge badge-amber">'+d.fv+'</span></td>'
+          +'<td style="color:var(--green);font-family:JetBrains Mono;">'+fmt(d.rev)+'</td>'
+          +'</tr>').join('')}
+      </tbody></table>
+    </div>`;
+
+  dc('c9');  chartInstances['c9'] =new Chart(document.getElementById('c9'),{type:'doughnut',data:{labels:['New (NBD)','Existing','Follow-up'],datasets:[{data:[f.nv,f.ev,f.fv],backgroundColor:['#22d3ee','#a78bfa','#fbbf24'],borderWidth:0,hoverOffset:8}]},options:{...cDef,scales:{},cutout:'65%'}});
+  dc('c10'); chartInstances['c10']=new Chart(document.getElementById('c10'),{type:'bar',data:{labels:pd.map(e=>e[0]),datasets:[{data:pd.map(e=>e[1]),backgroundColor:'#22d3ee',borderRadius:4,barThickness:24}]},options:{...cDef,plugins:{...cDef.plugins,legend:{display:false}}}});
+  const sn=sp.map(e=>e[0]);
+  dc('c11'); chartInstances['c11']=new Chart(document.getElementById('c11'),{type:'bar',data:{labels:sn,datasets:[{label:'New',data:sn.map(n=>f.bsp[n].nv),backgroundColor:'#34d399',borderRadius:4},{label:'Existing',data:sn.map(n=>f.bsp[n].ev),backgroundColor:'#a78bfa',borderRadius:4},{label:'Follow-up',data:sn.map(n=>f.bsp[n].fv),backgroundColor:'#fbbf24',borderRadius:4}]},options:{...cDef,scales:{...cDef.scales,x:{...cDef.scales.x,stacked:true},y:{...cDef.scales.y,stacked:true}}}});
+  const sr=sp.filter(e=>e[1].rev>0).sort((a,b)=>b[1].rev-a[1].rev);
+  dc('c12'); chartInstances['c12']=new Chart(document.getElementById('c12'),{type:'bar',data:{labels:sr.map(e=>e[0]),datasets:[{data:sr.map(e=>e[1].rev),backgroundColor:'#fbbf24',borderRadius:4,barThickness:28}]},options:{...cDef,indexAxis:'y',plugins:{...cDef.plugins,legend:{display:false}}}});
 }
 
-// ========== AUTO-START ==========
-document.addEventListener('DOMContentLoaded',()=>{fetchAllData();setInterval(fetchAllData,300000);});
+// ============================================================
+//  BOOT — auto-fetch + refresh every 5 mins
+// ============================================================
+document.addEventListener('DOMContentLoaded',()=>{ fetchAllData(); setInterval(fetchAllData,300000); });
 </script>
 </body>
 </html>

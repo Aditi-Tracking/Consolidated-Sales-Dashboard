@@ -228,6 +228,28 @@ function parseDate(v){
   const d=new Date(s); return isNaN(d.getTime())?null:d;
 }
 
+// Auto-detect Expected Revenue column — scans row keys for anything containing "revenue"
+let _erCol = null;
+function getERCol(data){
+  if(_erCol) return _erCol;
+  if(!data||!data.length) return null;
+  const keys=Object.keys(data[0]);
+  const exact=['Expected Revenue (₹)','Expected Revenue','ExpectedRevenue','Expected Revenue(Rs)','Expected Revenue (Rs)'];
+  for(const e of exact) if(keys.includes(e)){_erCol=e;return _erCol;}
+  const fuzzy=keys.find(k=>k.toLowerCase().includes('revenue'));
+  if(fuzzy){_erCol=fuzzy;return _erCol;}
+  console.warn('FS: No revenue column found. Available keys:',keys);
+  return null;
+}
+function getER(r,col){
+  if(!col) return 0;
+  const raw=r[col];
+  if(raw===null||raw===undefined||raw==='') return 0;
+  const cleaned=String(raw).replace(/[₹,\s]/g,'');
+  const v=parseFloat(cleaned);
+  return isNaN(v)?0:v;
+}
+
 // Detect email column (checks multiple possible names)
 const EMAIL_FIELDS=['Email','email','Email ID','EmailID','Customer Email','Email Address','E-mail','EMail'];
 function getEmail(r){
@@ -381,15 +403,21 @@ function compFS(data){
   const fv = data.filter(r=>String(r[pc]||'').toLowerCase().includes('follow')).length;
   const int_= data.filter(r=>{ const v=String(r['Winning Chances']||'').toLowerCase(); return (v.includes('intersted')||v.includes('interested'))&&!v.includes('not'); }).length;
   const nint= data.filter(r=>String(r['Winning Chances']||'').toLowerCase().includes('not inter')).length;
-  const getER=r=>{ const v=num(r['Expected Revenue (₹)']||r['Expected Revenue']); return v>1?v:0; };
-  const ter=data.reduce((s,r)=>s+getER(r),0);
+
+  // Auto-detect the revenue column from actual sheet headers
+  // Resets cache so each compFS call uses freshest data headers
+  _erCol = null;
+  const erCol = getERCol(data);
+  console.log('FS Revenue column detected:', erCol);
+
+  const ter=data.reduce((s,r)=>s+getER(r,erCol),0);
   let nr=0,er=0;
-  data.forEach(r=>{ const v=getER(r); if(v===0)return; const p=String(r[pc]||'').toLowerCase(); if(p.match(/exisit|exist/))er+=v; else nr+=v; });
+  data.forEach(r=>{ const v=getER(r,erCol); if(v===0)return; const p=String(r[pc]||'').toLowerCase(); if(p.match(/exisit|exist/))er+=v; else nr+=v; });
   const bsp={};
   data.forEach(r=>{
     const sp=r['Sales Person Name']||r['Salesperson']||'Unknown';
     if(!bsp[sp])bsp[sp]={vis:0,nv:0,ev:0,fv:0,rev:0};
-    bsp[sp].vis++; bsp[sp].rev+=getER(r);
+    bsp[sp].vis++; bsp[sp].rev+=getER(r,erCol);
     const p=String(r[pc]||'').toLowerCase();
     if(p.includes('new'))bsp[sp].nv++;
     if(p.match(/exisit|exist/))bsp[sp].ev++;
@@ -397,7 +425,7 @@ function compFS(data){
   });
   const bpd={};
   data.forEach(r=>{ const p=r['Product']||'Unknown'; bpd[p]=(bpd[p]||0)+1; });
-  return{t,nv,ev,fv,int_,nint,ter,nr,er,bsp,bpd};
+  return{t,nv,ev,fv,int_,nint,ter,nr,er,bsp,bpd,erCol};
 }
 
 // ============================================================

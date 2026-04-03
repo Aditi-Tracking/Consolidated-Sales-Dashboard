@@ -1,568 +1,368 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Aditi Tracking — Sales KPI Dashboard</title>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body, #root { height: 100%; }
-    body { background: #0a0a12; font-family: 'DM Sans', sans-serif; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    #boot {
-      position: fixed; inset: 0; background: #0a0a12;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
-    }
-    #boot-spinner {
-      width: 36px; height: 36px; border-radius: 50%;
-      border: 3px solid rgba(59,130,246,0.15); border-top-color: #3b82f6;
-      animation: spin 1s linear infinite;
-    }
-    #boot-msg { color: rgba(255,255,255,0.45); font-size: 13px; }
-    #error-box {
-      display: none; position: fixed; inset: 0; background: #0a0a12;
-      align-items: center; justify-content: center; flex-direction: column; gap: 12px; padding: 32px;
-    }
-    #error-box.show { display: flex; }
-    #error-text { color: #ef4444; font-size: 14px; font-weight: 600; font-family: monospace; max-width: 600px; text-align: center; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aditi Tracking — Sales KPI Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg-primary: #0a0e17;
+    --bg-card: #111827;
+    --bg-card-hover: #1a2332;
+    --bg-input: #1e293b;
+    --border: #1e293b;
+    --border-light: #2d3a4d;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --accent: #22d3ee;
+    --accent-dim: rgba(34,211,238,0.12);
+    --green: #34d399;
+    --green-dim: rgba(52,211,153,0.12);
+    --red: #f87171;
+    --red-dim: rgba(248,113,113,0.12);
+    --amber: #fbbf24;
+    --amber-dim: rgba(251,191,36,0.12);
+    --purple: #a78bfa;
+    --purple-dim: rgba(167,139,250,0.12);
+    --blue: #60a5fa;
+    --blue-dim: rgba(96,165,250,0.12);
+    --orange: #fb923c;
+    --orange-dim: rgba(251,146,60,0.12);
+    --radius: 12px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .grain {
+    position: fixed; inset:0; pointer-events:none; z-index:9999; opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .header {
+    padding: 24px 32px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 16px; position: sticky; top:0; z-index:100;
+    background: rgba(10,14,23,0.92); backdrop-filter: blur(12px);
+  }
+  .header-left { display:flex; align-items:center; gap:16px; }
+  .logo {
+    width:40px; height:40px; border-radius:10px;
+    background: linear-gradient(135deg, var(--accent), #6366f1);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:18px; color:#fff;
+  }
+  .header h1 { font-size:20px; font-weight:700; letter-spacing:-0.3px; }
+  .header h1 span { color: var(--accent); }
+  .header-right { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .date-filter {
+    display:flex; align-items:center; gap:8px;
+    background: var(--bg-input); border:1px solid var(--border);
+    border-radius:8px; padding:6px 12px;
+  }
+  .date-filter label { font-size:12px; color:var(--text-muted); font-weight:500; }
+  .date-filter input {
+    background:transparent; border:none; color:var(--text-primary);
+    font-family:'DM Sans'; font-size:13px; outline:none;
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor:pointer; }
+  .btn {
+    padding:8px 16px; border-radius:8px; border:none; cursor:pointer;
+    font-family:'DM Sans'; font-size:13px; font-weight:600;
+    display:flex; align-items:center; gap:6px; transition:all 0.2s;
+  }
+  .btn-primary { background: var(--accent); color:#0a0e17; }
+  .btn-primary:hover { background:#67e8f9; }
+  .btn-outline { background:transparent; color:var(--text-secondary); border:1px solid var(--border); }
+  .btn-outline:hover { border-color:var(--text-muted); color:var(--text-primary); }
+  .status-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+  .status-dot.live { background:var(--green); box-shadow:0 0 8px var(--green); animation: pulse 2s infinite; }
+  .status-dot.error { background:var(--red); }
+  .status-dot.loading { background:var(--amber); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+  .main { padding:24px 32px; max-width:1600px; margin:0 auto; }
+  .tabs {
+    display:flex; gap:4px; margin-bottom:24px;
+    background: var(--bg-card); border-radius:10px; padding:4px; width:fit-content;
+  }
+  .tab {
+    padding:10px 24px; border-radius:8px; border:none; cursor:pointer;
+    font-family:'DM Sans'; font-size:14px; font-weight:600;
+    background:transparent; color:var(--text-muted); transition:all 0.2s;
+  }
+  .tab.active { background:var(--accent-dim); color:var(--accent); box-shadow: inset 0 0 0 1px rgba(34,211,238,0.2); }
+  .tab:hover:not(.active) { color:var(--text-secondary); }
+  .section { display:none; }
+  .section.active { display:block; }
+  .kpi-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:24px; }
+  .kpi-card {
+    background: var(--bg-card); border:1px solid var(--border);
+    border-radius: var(--radius); padding:20px; transition: all 0.2s;
+  }
+  .kpi-card:hover { border-color: var(--border-light); transform:translateY(-1px); }
+  .kpi-card .kpi-icon { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px; margin-bottom:12px; }
+  .kpi-card .kpi-label { font-size:12px; font-weight:500; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
+  .kpi-card .kpi-value { font-size:28px; font-weight:700; letter-spacing:-0.5px; font-family:'JetBrains Mono', monospace; }
+  .kpi-card .kpi-sub { font-size:12px; color:var(--text-muted); margin-top:4px; }
+  .charts-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap:16px; margin-bottom:24px; }
+  .chart-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:20px; }
+  .chart-card h3 { font-size:14px; font-weight:600; margin-bottom:16px; color:var(--text-secondary); }
+  .chart-container { position:relative; width:100%; }
+  .table-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:20px; margin-bottom:24px; overflow-x:auto; }
+  .table-card h3 { font-size:14px; font-weight:600; margin-bottom:16px; color:var(--text-secondary); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  thead th { text-align:left; padding:10px 12px; font-weight:600; color:var(--text-muted); border-bottom:1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:0.5px; white-space:nowrap; }
+  tbody td { padding:10px 12px; border-bottom:1px solid var(--border); color:var(--text-secondary); white-space:nowrap; }
+  tbody tr:hover td { background:var(--bg-card-hover); }
+  .badge { display:inline-block; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:600; }
+  .badge-green { background:var(--green-dim); color:var(--green); }
+  .badge-red { background:var(--red-dim); color:var(--red); }
+  .badge-amber { background:var(--amber-dim); color:var(--amber); }
+  .badge-blue { background:var(--blue-dim); color:var(--blue); }
+  .badge-purple { background:var(--purple-dim); color:var(--purple); }
+  .split-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px; }
+  .split-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:20px; }
+  .split-card h3 { font-size:13px; font-weight:600; margin-bottom:16px; display:flex; align-items:center; gap:8px; }
+  .split-card h3 .dot { width:10px; height:10px; border-radius:50%; }
+  .loading-overlay { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:80px 20px; gap:16px; }
+  .spinner { width:40px; height:40px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .error-banner { background:var(--red-dim); border:1px solid rgba(248,113,113,0.3); border-radius:10px; padding:16px 20px; margin-bottom:24px; display:flex; align-items:center; gap:12px; font-size:13px; color:var(--red); }
+  .error-banner.hidden { display:none; }
+  .last-updated { font-size:11px; color:var(--text-muted); font-family:'JetBrains Mono'; }
+  @media (max-width:768px) {
+    .header { padding:16px; } .main { padding:16px; }
+    .charts-grid { grid-template-columns:1fr; } .split-grid { grid-template-columns:1fr; }
+    .kpi-grid { grid-template-columns: repeat(2,1fr); }
+    .tabs { width:100%; } .tab { flex:1; text-align:center; padding:10px 12px; font-size:13px; }
+  }
+</style>
 </head>
 <body>
-  <div id="boot">
-    <div id="boot-spinner"></div>
-    <div id="boot-msg">Loading dashboard...</div>
+<div class="grain"></div>
+<header class="header">
+  <div class="header-left">
+    <div class="logo">AT</div>
+    <h1>Sales <span>KPI</span> Dashboard</h1>
   </div>
-  <div id="error-box">
-    <div style="font-size:36px">&#9888;&#65039;</div>
-    <div id="error-text"></div>
-    <div style="color:rgba(255,255,255,0.35);font-size:12px;text-align:center;max-width:500px;line-height:1.6">
-      Open browser DevTools (F12 &rarr; Console) to see the full error details.
+  <div class="header-right">
+    <span id="statusIndicator" style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);">
+      <span class="status-dot loading"></span><span>Connecting...</span>
+    </span>
+    <span id="lastUpdated" class="last-updated"></span>
+    <div class="date-filter"><label>From</label><input type="date" id="dateFrom"></div>
+    <div class="date-filter"><label>To</label><input type="date" id="dateTo"></div>
+    <button class="btn btn-primary" onclick="applyFilters()">Apply</button>
+    <button class="btn btn-outline" onclick="resetFilters()">Reset</button>
+    <button class="btn btn-outline" onclick="fetchAllData()" title="Refresh now">🔄</button>
+  </div>
+</header>
+<main class="main">
+  <div class="error-banner hidden" id="errorBanner"><span>⚠️</span><span id="errorText"></span></div>
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('overview',this)">Overview</button>
+    <button class="tab" onclick="switchTab('inside',this)">Inside Sales</button>
+    <button class="tab" onclick="switchTab('field',this)">Field Sales</button>
+  </div>
+  <div class="section active" id="sec-overview"><div id="overviewContent"><div class="loading-overlay"><div class="spinner"></div><span style="color:var(--text-muted);font-size:13px;">Loading dashboard...</span></div></div></div>
+  <div class="section" id="sec-inside"><div id="insideContent"><div class="loading-overlay"><div class="spinner"></div><span style="color:var(--text-muted);font-size:13px;">Loading inside sales...</span></div></div></div>
+  <div class="section" id="sec-field"><div id="fieldContent"><div class="loading-overlay"><div class="spinner"></div><span style="color:var(--text-muted);font-size:13px;">Loading field sales...</span></div></div></div>
+</main>
+<script>
+// ========== HARDCODED API URLS ==========
+const INSIDE_SALES_API = "https://script.google.com/macros/s/AKfycbxsC_glUfbC5RJSs0BPFYQI5jbsM5p6VeIraKcl-cO8zC8VjVnLqFYQuumhRP69oEy2/exec";
+const FIELD_SALES_API  = "https://script.google.com/macros/s/AKfycbyPgpnZ31W0qhSL3fVJOC0UbVadmwiZyaPcLpiGdYertNEkYIjNe6u5LVNEZIrSsF0u_Q/exec";
+
+let insideData=[], fieldData=[], filteredInsideData=[], filteredFieldData=[], chartInstances={};
+
+function setStatus(t,txt){document.getElementById('statusIndicator').innerHTML='<span class="status-dot '+t+'"></span><span>'+txt+'</span>';}
+function showError(m){document.getElementById('errorBanner').classList.remove('hidden');document.getElementById('errorText').textContent=m;}
+function hideError(){document.getElementById('errorBanner').classList.add('hidden');}
+
+async function fetchAllData(){
+  setStatus('loading','Fetching data...'); hideError();
+  try{
+    const[insRes,fldRes]=await Promise.allSettled([
+      fetch(INSIDE_SALES_API).then(r=>r.json()),
+      fetch(FIELD_SALES_API).then(r=>r.json())
+    ]);
+    let iOk=false,fOk=false;
+    if(insRes.status==='fulfilled'){insideData=insRes.value;iOk=true;}else console.error('IS err:',insRes.reason);
+    if(fldRes.status==='fulfilled'){fieldData=fldRes.value;fOk=true;}else console.error('FS err:',fldRes.reason);
+    filteredInsideData=[...insideData]; filteredFieldData=[...fieldData];
+    if(iOk&&fOk) setStatus('live','Live · '+(insideData.length+fieldData.length)+' records');
+    else if(iOk||fOk){setStatus('live','Partial · '+(insideData.length+fieldData.length)+' records');showError('One API failed. Showing available data.');}
+    else{setStatus('error','Failed');showError('Both APIs failed. Check network or redeploy.');}
+    document.getElementById('lastUpdated').textContent='Updated '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+    renderAll();
+  }catch(e){console.error(e);setStatus('error','Error');showError('Network error: '+e.message);}
+}
+
+function parseDate(v){
+  if(!v)return null; if(v instanceof Date)return v;
+  const s=String(v).trim();
+  const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if(m){let y=parseInt(m[3]);if(y<100)y+=2000;return new Date(y,parseInt(m[2])-1,parseInt(m[1]));}
+  const d=new Date(s);return isNaN(d.getTime())?null:d;
+}
+
+function applyFilters(){
+  const fr=document.getElementById('dateFrom').value?new Date(document.getElementById('dateFrom').value):null;
+  const to=document.getElementById('dateTo').value?new Date(document.getElementById('dateTo').value+'T23:59:59'):null;
+  filteredInsideData=insideData.filter(r=>{const d=parseDate(r['Timestamp']);if(!d)return true;if(fr&&d<fr)return false;if(to&&d>to)return false;return true;});
+  filteredFieldData=fieldData.filter(r=>{const d=parseDate(r['Timestamp']||r['Date']);if(!d)return true;if(fr&&d<fr)return false;if(to&&d>to)return false;return true;});
+  renderAll();
+}
+function resetFilters(){document.getElementById('dateFrom').value='';document.getElementById('dateTo').value='';filteredInsideData=[...insideData];filteredFieldData=[...fieldData];renderAll();}
+
+function switchTab(tab,el){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));el.classList.add('active');document.getElementById('sec-'+tab).classList.add('active');}
+
+function fmt(n){if(n>=10000000)return'₹'+(n/10000000).toFixed(1)+' Cr';if(n>=100000)return'₹'+(n/100000).toFixed(1)+' L';if(n>=1000)return'₹'+(n/1000).toFixed(1)+'K';return'₹'+n.toLocaleString('en-IN');}
+function num(n){return Number(n)||0;}
+function isYes(v){return v&&String(v).trim().toLowerCase()==='yes';}
+function has(v){return v!==null&&v!==undefined&&v!=='';}
+function dc(id){if(chartInstances[id]){chartInstances[id].destroy();delete chartInstances[id];}}
+
+const cDef={responsive:true,maintainAspectRatio:false,
+  plugins:{legend:{labels:{color:'#94a3b8',font:{family:'DM Sans',size:11},padding:12,usePointStyle:true,pointStyleWidth:8}},tooltip:{backgroundColor:'#1e293b',titleColor:'#f1f5f9',bodyColor:'#94a3b8',borderColor:'#2d3a4d',borderWidth:1,padding:10,titleFont:{family:'DM Sans',weight:'600'},bodyFont:{family:'DM Sans'},cornerRadius:8}},
+  scales:{x:{ticks:{color:'#64748b',font:{family:'DM Sans',size:11}},grid:{color:'rgba(30,41,59,0.5)'}},y:{ticks:{color:'#64748b',font:{family:'DM Sans',size:11}},grid:{color:'rgba(30,41,59,0.5)'}}}
+};
+
+function compIS(data){
+  const t=data.length;
+  const vl=data.filter(r=>String(r['Lead Quality']||'').toLowerCase()!=='junk'&&has(r['Customer Name'])).length;
+  const tc=data.filter(r=>has(r['1st Call'])||isYes(r['1st Call'])).length;
+  const dg=data.filter(r=>isYes(r['Is the Demo Given'])).length;
+  const f1=data.filter(r=>has(r['Follow-up 1 '])||has(r['Follow-up 1'])).length;
+  const f2=data.filter(r=>has(r['Follow-up 2 '])||has(r['Follow-up 2'])).length;
+  const f3=data.filter(r=>has(r['Follow-up 3'])).length;
+  const qs=data.filter(r=>isYes(r['Quotation Sent'])).length;
+  const w=data.filter(r=>isYes(r['Won'])).length;
+  const l=data.filter(r=>has(r['Lost'])&&!isYes(r['Won'])).length;
+  const rev=data.reduce((s,r)=>s+num(r['Order Value']),0);
+  const hot=data.filter(r=>String(r['LeadType']||'').toLowerCase()==='hot').length;
+  const warm=data.filter(r=>String(r['LeadType']||'').toLowerCase()==='warm').length;
+  const cold=data.filter(r=>String(r['LeadType']||'').toLowerCase()==='cold').length;
+  const src={};data.forEach(r=>{const s=r['Source']||'Unknown';src[s]=(src[s]||0)+1;});
+  const sol={};data.forEach(r=>{const s=r['Solution']||'Unknown';sol[s]=(sol[s]||0)+1;});
+  const wr=qs>0?((w/qs)*100).toFixed(1):0;
+  const rbs={};data.filter(r=>isYes(r['Won'])).forEach(r=>{const s=r['Source']||'Unknown';rbs[s]=(rbs[s]||0)+num(r['Order Value']);});
+  const junk=data.filter(r=>String(r['Lead Quality']||'').toLowerCase()==='junk'||String(r['Remarks']||'').toLowerCase().includes('junk')).length;
+  const wd=data.filter(r=>isYes(r['Won'])&&num(r['Order Value'])>0);
+  const avg=wd.length>0?wd.reduce((s,r)=>s+num(r['Order Value']),0)/wd.length:0;
+  return{t,vl,tc,dg,f1,f2,f3,qs,w,l,rev,hot,warm,cold,src,sol,wr,rbs,junk,avg};
+}
+
+function compFS(data){
+  const t=data.length, pc='Purpose of Visit';
+  const nv=data.filter(r=>String(r[pc]||'').toLowerCase().includes('new')).length;
+  const ev=data.filter(r=>{const v=String(r[pc]||'').toLowerCase();return v.includes('exisiting')||v.includes('existing');}).length;
+  const fv=data.filter(r=>String(r[pc]||'').toLowerCase().includes('follow')).length;
+  const int=data.filter(r=>{const v=String(r['Winning Chances']||'').toLowerCase();return(v.includes('intersted')||v.includes('interested'))&&!v.includes('not');}).length;
+  const nint=data.filter(r=>String(r['Winning Chances']||'').toLowerCase().includes('not inter')).length;
+  const ter=data.reduce((s,r)=>{const v=num(r['Expected Revenue (₹)']||r['Expected Revenue']);return s+(v>1?v:0);},0);
+  const bsp={};data.forEach(r=>{const sp=r['Sales Person Name']||'Unknown';if(!bsp[sp])bsp[sp]={vis:0,nv:0,ev:0,rev:0};bsp[sp].vis++;if(String(r[pc]||'').toLowerCase().includes('new'))bsp[sp].nv++;if(String(r[pc]||'').toLowerCase().match(/exisit|exist/))bsp[sp].ev++;const v=num(r['Expected Revenue (₹)']||r['Expected Revenue']);bsp[sp].rev+=(v>1?v:0);});
+  const bpd={};data.forEach(r=>{const p=r['Product']||'Unknown';bpd[p]=(bpd[p]||0)+1;});
+  let nr=0,er=0;data.forEach(r=>{const v=num(r['Expected Revenue (₹)']||r['Expected Revenue']);if(v<=1)return;const p=String(r[pc]||'').toLowerCase();if(p.match(/exisit|exist/))er+=v;else nr+=v;});
+  return{t,nv,ev,fv,int,nint,ter,bsp,bpd,nr,er};
+}
+
+function renderAll(){renderOV();renderIS();renderFS();}
+
+function renderOV(){
+  const i=compIS(filteredInsideData),f=compFS(filteredFieldData);
+  document.getElementById('overviewContent').innerHTML=`
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--accent-dim);color:var(--accent);">📞</div><div class="kpi-label">Inside Sales Leads</div><div class="kpi-value">${i.t}</div><div class="kpi-sub">Valid: ${i.vl} · Junk: ${i.junk}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--blue-dim);color:var(--blue);">🚗</div><div class="kpi-label">Field Visits</div><div class="kpi-value">${f.t}</div><div class="kpi-sub">New: ${f.nv} · Existing: ${f.ev}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">✅</div><div class="kpi-label">Deals Won (IS)</div><div class="kpi-value">${i.w}</div><div class="kpi-sub">Win Rate: ${i.wr}%</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--red-dim);color:var(--red);">❌</div><div class="kpi-label">Deals Lost (IS)</div><div class="kpi-value">${i.l}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">💰</div><div class="kpi-label">IS Revenue (Won)</div><div class="kpi-value" style="color:var(--green);">${fmt(i.rev)}</div><div class="kpi-sub">Avg deal: ${fmt(Math.round(i.avg))}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--purple-dim);color:var(--purple);">📊</div><div class="kpi-label">FS Expected Revenue</div><div class="kpi-value" style="color:var(--purple);">${fmt(f.ter)}</div><div class="kpi-sub">NBD: ${fmt(f.nr)} · Exist: ${fmt(f.er)}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--amber-dim);color:var(--amber);">📨</div><div class="kpi-label">Quotations Sent (IS)</div><div class="kpi-value">${i.qs}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--orange-dim);color:var(--orange);">👍</div><div class="kpi-label">FS Interest Rate</div><div class="kpi-value">${f.t>0?((f.int/f.t)*100).toFixed(0):0}%</div><div class="kpi-sub">${f.int} of ${f.t}</div></div>
     </div>
-  </div>
-  <div id="root"></div>
+    <div class="charts-grid">
+      <div class="chart-card"><h3>Inside Sales — Conversion Funnel</h3><div class="chart-container" style="height:280px;"><canvas id="c1"></canvas></div></div>
+      <div class="chart-card"><h3>Inside Sales — Lead Temperature</h3><div class="chart-container" style="height:280px;"><canvas id="c2"></canvas></div></div>
+      <div class="chart-card"><h3>Inside Sales — Lead Sources</h3><div class="chart-container" style="height:280px;"><canvas id="c3"></canvas></div></div>
+      <div class="chart-card"><h3>Field Sales — Visit Breakdown</h3><div class="chart-container" style="height:280px;"><canvas id="c4"></canvas></div></div>
+    </div>`;
+  dc('c1');chartInstances['c1']=new Chart(document.getElementById('c1'),{type:'bar',data:{labels:['Leads','1st Call','Demo','Quotation','Won'],datasets:[{data:[i.t,i.tc,i.dg,i.qs,i.w],backgroundColor:['#60a5fa','#22d3ee','#a78bfa','#fbbf24','#34d399'],borderRadius:6,barThickness:36}]},options:{...cDef,indexAxis:'y',plugins:{...cDef.plugins,legend:{display:false}}}});
+  dc('c2');chartInstances['c2']=new Chart(document.getElementById('c2'),{type:'doughnut',data:{labels:['Hot 🔥','Warm 🌤','Cold ❄️'],datasets:[{data:[i.hot,i.warm,i.cold],backgroundColor:['#f87171','#fbbf24','#60a5fa'],borderWidth:0,hoverOffset:8}]},options:{...cDef,scales:{},cutout:'65%'}});
+  dc('c3');const sl=Object.keys(i.src).sort((a,b)=>i.src[b]-i.src[a]).slice(0,10);chartInstances['c3']=new Chart(document.getElementById('c3'),{type:'bar',data:{labels:sl,datasets:[{data:sl.map(l=>i.src[l]),backgroundColor:'#22d3ee',borderRadius:4,barThickness:24}]},options:{...cDef,plugins:{...cDef.plugins,legend:{display:false}}}});
+  dc('c4');chartInstances['c4']=new Chart(document.getElementById('c4'),{type:'doughnut',data:{labels:['New (NBD)','Existing','Follow-up'],datasets:[{data:[f.nv,f.ev,f.fv],backgroundColor:['#22d3ee','#a78bfa','#fbbf24'],borderWidth:0,hoverOffset:8}]},options:{...cDef,scales:{},cutout:'65%'}});
+}
 
-  <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
-  <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
+function renderIS(){
+  const i=compIS(filteredInsideData);
+  document.getElementById('insideContent').innerHTML=`
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--accent-dim);color:var(--accent);">📋</div><div class="kpi-label">Total Leads</div><div class="kpi-value">${i.t}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--blue-dim);color:var(--blue);">📞</div><div class="kpi-label">1st Call Done</div><div class="kpi-value">${i.tc}</div><div class="kpi-sub">${i.t>0?((i.tc/i.t)*100).toFixed(0):0}% of leads</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--purple-dim);color:var(--purple);">🎯</div><div class="kpi-label">Demo Given</div><div class="kpi-value">${i.dg}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--amber-dim);color:var(--amber);">🔄</div><div class="kpi-label">Follow-ups</div><div class="kpi-value">${i.f1}</div><div class="kpi-sub">F2: ${i.f2} · F3: ${i.f3}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--orange-dim);color:var(--orange);">📨</div><div class="kpi-label">Quotation Sent</div><div class="kpi-value">${i.qs}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">✅</div><div class="kpi-label">Won</div><div class="kpi-value" style="color:var(--green);">${i.w}</div><div class="kpi-sub">Win Rate: ${i.wr}%</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--red-dim);color:var(--red);">❌</div><div class="kpi-label">Lost / Junk</div><div class="kpi-value" style="color:var(--red);">${i.l}</div><div class="kpi-sub">Junk: ${i.junk}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">💰</div><div class="kpi-label">Total Revenue</div><div class="kpi-value" style="color:var(--green);">${fmt(i.rev)}</div><div class="kpi-sub">Avg: ${fmt(Math.round(i.avg))}</div></div>
+    </div>
+    <div class="charts-grid">
+      <div class="chart-card"><h3>Full Conversion Funnel</h3><div class="chart-container" style="height:300px;"><canvas id="c5"></canvas></div></div>
+      <div class="chart-card"><h3>Revenue by Source</h3><div class="chart-container" style="height:300px;"><canvas id="c6"></canvas></div></div>
+      <div class="chart-card"><h3>Solution Breakdown</h3><div class="chart-container" style="height:300px;"><canvas id="c7"></canvas></div></div>
+      <div class="chart-card"><h3>Lead Source Distribution</h3><div class="chart-container" style="height:300px;"><canvas id="c8"></canvas></div></div>
+    </div>
+    <div class="table-card"><h3>Recent Won Deals</h3><table><thead><tr><th>Customer</th><th>Source</th><th>Solution</th><th>Product</th><th>Order Value</th></tr></thead><tbody>
+      ${filteredInsideData.filter(r=>isYes(r['Won'])).slice(-20).reverse().map(r=>'<tr><td style="color:var(--text-primary);font-weight:500;">'+( r['Customer Name']||'-')+'</td><td><span class="badge badge-blue">'+(r['Source']||'-')+'</span></td><td>'+(r['Solution']||'-')+'</td><td>'+(r['Hero Product']||'-')+'</td><td style="color:var(--green);font-weight:600;font-family:JetBrains Mono;">₹'+num(r['Order Value']).toLocaleString('en-IN')+'</td></tr>').join('')}
+    </tbody></table></div>`;
+  dc('c5');chartInstances['c5']=new Chart(document.getElementById('c5'),{type:'bar',data:{labels:['Leads','1st Call','Demo','F/U 1','F/U 2','F/U 3','Quotation','Won'],datasets:[{data:[i.t,i.tc,i.dg,i.f1,i.f2,i.f3,i.qs,i.w],backgroundColor:['#60a5fa','#38bdf8','#22d3ee','#a78bfa','#818cf8','#c084fc','#fbbf24','#34d399'],borderRadius:6,barThickness:28}]},options:{...cDef,plugins:{...cDef.plugins,legend:{display:false}}}});
+  dc('c6');const rl=Object.keys(i.rbs).sort((a,b)=>i.rbs[b]-i.rbs[a]);chartInstances['c6']=new Chart(document.getElementById('c6'),{type:'bar',data:{labels:rl,datasets:[{data:rl.map(l=>i.rbs[l]),backgroundColor:'#34d399',borderRadius:4,barThickness:28}]},options:{...cDef,plugins:{...cDef.plugins,legend:{display:false}}}});
+  dc('c7');const soll=Object.keys(i.sol).sort((a,b)=>i.sol[b]-i.sol[a]);chartInstances['c7']=new Chart(document.getElementById('c7'),{type:'doughnut',data:{labels:soll,datasets:[{data:soll.map(l=>i.sol[l]),backgroundColor:['#22d3ee','#a78bfa','#fbbf24','#f87171','#34d399','#fb923c','#60a5fa'],borderWidth:0}]},options:{...cDef,scales:{},cutout:'60%'}});
+  dc('c8');const sdl=Object.keys(i.src).sort((a,b)=>i.src[b]-i.src[a]);chartInstances['c8']=new Chart(document.getElementById('c8'),{type:'doughnut',data:{labels:sdl,datasets:[{data:sdl.map(l=>i.src[l]),backgroundColor:['#22d3ee','#a78bfa','#fbbf24','#f87171','#34d399','#fb923c','#60a5fa','#e879f9'],borderWidth:0}]},options:{...cDef,scales:{},cutout:'60%'}});
+}
 
-  <script>
-    window.addEventListener('error', function(e) {
-      document.getElementById('boot').style.display = 'none';
-      document.getElementById('error-box').classList.add('show');
-      document.getElementById('error-text').textContent = 'Script error: ' + (e.message || String(e));
-    }, true);
-  </script>
+function renderFS(){
+  const f=compFS(filteredFieldData);
+  const sp=Object.entries(f.bsp).sort((a,b)=>b[1].vis-a[1].vis);
+  const pd=Object.entries(f.bpd).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  document.getElementById('fieldContent').innerHTML=`
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--accent-dim);color:var(--accent);">🚗</div><div class="kpi-label">Total Visits</div><div class="kpi-value">${f.t}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">🆕</div><div class="kpi-label">New (NBD)</div><div class="kpi-value" style="color:var(--green);">${f.nv}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--purple-dim);color:var(--purple);">🔄</div><div class="kpi-label">Existing</div><div class="kpi-value" style="color:var(--purple);">${f.ev}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--amber-dim);color:var(--amber);">📞</div><div class="kpi-label">Follow-up</div><div class="kpi-value" style="color:var(--amber);">${f.fv}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">👍</div><div class="kpi-label">Interested</div><div class="kpi-value">${f.int}</div><div class="kpi-sub">${f.t>0?((f.int/f.t)*100).toFixed(0):0}% rate</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--red-dim);color:var(--red);">👎</div><div class="kpi-label">Not Interested</div><div class="kpi-value" style="color:var(--red);">${f.nint}</div></div>
+      <div class="kpi-card"><div class="kpi-icon" style="background:var(--green-dim);color:var(--green);">💰</div><div class="kpi-label">Expected Revenue</div><div class="kpi-value" style="color:var(--green);">${fmt(f.ter)}</div></div>
+    </div>
+    <div class="split-grid">
+      <div class="split-card"><h3><span class="dot" style="background:var(--green);"></span> NBD Revenue</h3><div style="font-size:32px;font-weight:700;font-family:'JetBrains Mono';color:var(--green);">${fmt(f.nr)}</div></div>
+      <div class="split-card"><h3><span class="dot" style="background:var(--purple);"></span> Existing Revenue</h3><div style="font-size:32px;font-weight:700;font-family:'JetBrains Mono';color:var(--purple);">${fmt(f.er)}</div></div>
+    </div>
+    <div class="charts-grid">
+      <div class="chart-card"><h3>Visit Type Breakdown</h3><div class="chart-container" style="height:280px;"><canvas id="c9"></canvas></div></div>
+      <div class="chart-card"><h3>Product Demand</h3><div class="chart-container" style="height:280px;"><canvas id="c10"></canvas></div></div>
+      <div class="chart-card"><h3>Visits by Salesperson</h3><div class="chart-container" style="height:280px;"><canvas id="c11"></canvas></div></div>
+      <div class="chart-card"><h3>Revenue by Salesperson</h3><div class="chart-container" style="height:280px;"><canvas id="c12"></canvas></div></div>
+    </div>
+    <div class="table-card"><h3>Salesperson Performance</h3><table><thead><tr><th>Salesperson</th><th>Total Visits</th><th>New (NBD)</th><th>Existing</th><th>Exp. Revenue</th></tr></thead><tbody>
+      ${sp.map(([n,d])=>'<tr><td style="color:var(--text-primary);font-weight:500;">'+n+'</td><td>'+d.vis+'</td><td><span class="badge badge-green">'+d.nv+'</span></td><td><span class="badge badge-purple">'+d.ev+'</span></td><td style="color:var(--green);font-family:JetBrains Mono;">'+fmt(d.rev)+'</td></tr>').join('')}
+    </tbody></table></div>`;
+  dc('c9');chartInstances['c9']=new Chart(document.getElementById('c9'),{type:'doughnut',data:{labels:['New (NBD)','Existing','Follow-up'],datasets:[{data:[f.nv,f.ev,f.fv],backgroundColor:['#34d399','#a78bfa','#fbbf24'],borderWidth:0,hoverOffset:8}]},options:{...cDef,scales:{},cutout:'65%'}});
+  dc('c10');chartInstances['c10']=new Chart(document.getElementById('c10'),{type:'bar',data:{labels:pd.map(e=>e[0]),datasets:[{data:pd.map(e=>e[1]),backgroundColor:'#22d3ee',borderRadius:4,barThickness:24}]},options:{...cDef,plugins:{...cDef.plugins,legend:{display:false}}}});
+  dc('c11');const sn=sp.map(e=>e[0]);chartInstances['c11']=new Chart(document.getElementById('c11'),{type:'bar',data:{labels:sn,datasets:[{label:'New',data:sn.map(n=>f.bsp[n].nv),backgroundColor:'#34d399',borderRadius:4},{label:'Existing',data:sn.map(n=>f.bsp[n].ev),backgroundColor:'#a78bfa',borderRadius:4}]},options:{...cDef,scales:{...cDef.scales,x:{...cDef.scales.x,stacked:true},y:{...cDef.scales.y,stacked:true}}}});
+  dc('c12');const sr=sp.filter(e=>e[1].rev>0).sort((a,b)=>b[1].rev-a[1].rev);chartInstances['c12']=new Chart(document.getElementById('c12'),{type:'bar',data:{labels:sr.map(e=>e[0]),datasets:[{data:sr.map(e=>e[1].rev),backgroundColor:'#fbbf24',borderRadius:4,barThickness:28}]},options:{...cDef,indexAxis:'y',plugins:{...cDef.plugins,legend:{display:false}}}});
+}
 
-  <script type="text/babel" data-presets="react">
-    try {
-      const { useState, useEffect, useCallback, useMemo } = React;
-      const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-              ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line } = Recharts;
-
-      // ══════════════════════════════════════════════════════════════
-      //  PASTE YOUR GOOGLE APPS SCRIPT WEB APP URLs HERE
-      // ══════════════════════════════════════════════════════════════
-      const FIELD_SCRIPT_URL  = "https://script.google.com/macros/s/AKfycbzhvgzH2FLx28sETY364A1FBxex0Qdy08EH7mzYO9_Do1FQnfrR4Q2f2wTqPUpyqNIYdA/exec";
-      const INSIDE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxsC_glUfbC5RJSs0BPFYQI5jbsM5p6VeIraKcl-cO8zC8VjVnLqFYQuumhRP69oEy2/exec";
-      // ══════════════════════════════════════════════════════════════
-
-      const REFRESH_MS = 5 * 60 * 1000;
-      const COLORS = ["#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6","#ec4899","#06b6d4","#84cc16","#f97316"];
-      const fmt = v => { if (!v||isNaN(v)) return "₹0"; if (v>=100000) return `₹${(v/100000).toFixed(1)}L`; if (v>=1000) return `₹${(v/1000).toFixed(1)}K`; return `₹${v}`; };
-      const fN  = v => (v ?? 0).toLocaleString("en-IN");
-
-      // ── DATA PROCESSORS ──────────────────────────────────────────
-
-      function processField(rows) {
-        const d = { total:0,purposeNew:0,purposeExist:0,purposeFU:0,interested:0,notInterested:0,blankInterest:0,revenue:0,sp:{},products:{},locations:{},monthly:{} };
-        rows.forEach(r => {
-          const purpose = String(r["Purpose of Visit"]||r["LeadType"]||"").trim().toLowerCase();
-          const person  = String(r["Sales Person Name"]||"").trim();
-          const loc     = String(r["Location"]||"").trim();
-          const prod    = String(r["Column 11"]||r["Solution"]||"").trim();
-          const winRaw  = String(r["Winning Chances"]||r["Win Chances"]||"").trim().toLowerCase();
-          const revRaw  = parseFloat(String(r["Expected Revenue (₹)"]||r["Expected Revenue"]||r["Order Value"]||"0").replace(/[₹,\s]/g,""));
-          const rev     = isNaN(revRaw)||revRaw<=1 ? 0 : revRaw;
-          const dateStr = String(r["Date"]||r["Timestamp"]||"");
-          if (!purpose&&!person&&!loc) return;
-          d.total++;
-          if      (purpose.includes("new")||purpose.includes("nbd"))                                        d.purposeNew++;
-          else if (purpose.includes("follow")||purpose.includes("lead follow"))                             d.purposeFU++;
-          else if (purpose.includes("exist")||purpose.includes("repeat")||purpose.includes("payment"))     d.purposeExist++;
-          else d.purposeNew++;
-          if      (winRaw.includes("not"))                                                                  d.notInterested++;
-          else if (winRaw.includes("intersted")||winRaw.includes("interested")||winRaw==="yes")            d.interested++;
-          else d.blankInterest++;
-          d.revenue += rev;
-          if (person) {
-            if (!d.sp[person]) d.sp[person]={name:person,visits:0,newV:0,existV:0,fuV:0,intV:0,rev:0};
-            d.sp[person].visits++; d.sp[person].rev+=rev;
-            if      (purpose.includes("new")||purpose.includes("nbd")) d.sp[person].newV++;
-            else if (purpose.includes("follow"))                        d.sp[person].fuV++;
-            else                                                        d.sp[person].existV++;
-            if (!winRaw.includes("not")&&(winRaw.includes("intersted")||winRaw.includes("interested"))) d.sp[person].intV++;
-          }
-          if (prod) { prod.split(",").map(p=>p.trim()).filter(Boolean).forEach(p => { const k=p.includes("AIS")?"AIS 140":p.includes("2G")?"Basic 2G":p.includes("Fuel")?"Fuel Sensor":p.includes("Dash")?"Dashcam":p.includes("Cool")?"Cool Bus":(p.includes("4G")||p.includes("Advance"))?"Advance 4G":p.includes("TPMS")?"TPMS":p.includes("Sim")?"Sim Track":p; d.products[k]=(d.products[k]||0)+1; }); }
-          if (loc) { const ll=loc.toLowerCase(); const region=ll.match(/ponda|margoa|madgoa|canacona|verna|colva|kundaim|usgoa|shiroda|dharban|savordem/)?"Goa (South)":ll.match(/mapusa|bicholim|calangute|anjuna|panaji|panjim|nachinola|porvorim|siolim|thivim|aldona/)?"Goa (North)":ll.match(/bangalore|hosur/)?"Bangalore":ll.match(/pune|wagholi|baner|pashan|kharadi|warje|aundh|balewadi/)?"Pune":ll.match(/mumbai|navi mumbai|borivali|andheri|mira road|goregaon|dadar|kandivali/)?"Mumbai":ll.match(/vadodara|ahemdabad|anand|nadiad|rajkot/)?"Gujarat":ll.match(/hubli|dharwad/)?"Karnataka":"Others"; d.locations[region]=(d.locations[region]||0)+1; }
-          if (dateStr) { try { const pts=dateStr.toString().split("/"); if (pts.length>=3) { const m=parseInt(pts[0]),dy=parseInt(pts[1]),y=parseInt(pts[2]); if (m>0&&m<=12) { const dt=new Date(y<100?2000+y:y,m-1,dy); if (!isNaN(dt)) { const k=dt.toLocaleDateString("en-US",{month:"short",year:"2-digit"}); if (!d.monthly[k]) d.monthly[k]={month:k,visits:0,newV:0,existV:0,fuV:0}; d.monthly[k].visits++; if (purpose.includes("new")) d.monthly[k].newV++; else if (purpose.includes("follow")) d.monthly[k].fuV++; else d.monthly[k].existV++; } } } } catch(e){} }
-        });
-        return d;
-      }
-
-      function processInside(rows) {
-        const d = { total:0,fc:0,fu1:0,fu2:0,fu3:0,qs:0,won:0,lost:0,wonRev:0,demoYes:0,hot:0,warm:0,cold:0,junk:0,sources:{},deals:[],monthly:{} };
-        rows.forEach(r => {
-          const name = String(r["Customer Name"]||"").trim(); if (!name) return; d.total++;
-          const has = col => { const v=String(r[col]||"").trim().toLowerCase(); return v&&v!=="no"; };
-          if (has("1st Call")) d.fc++; if (has("Follow-up 1")||has("D1")) d.fu1++; if (has("Follow-up 2")||has("D3")) d.fu2++; if (has("Follow-up 3")||has("D7")) d.fu3++; if (has("Quotation Sent")) d.qs++;
-          const w=String(r["Won"]||"").trim().toLowerCase(), l=String(r["Lost"]||"").trim().toLowerCase();
-          const ov=parseFloat(String(r["Order Value"]||"0").replace(/[₹,\s]/g,"")), rev=isNaN(ov)?0:ov;
-          if (w==="yes"){d.won++;d.wonRev+=rev;if(rev>0)d.deals.push({name,value:rev,product:String(r["Hero Product"]||"")});}
-          if (l&&l!=="no"&&l!=="") d.lost++;
-          if (String(r["Is the Demo Given"]||"").trim().toLowerCase()==="yes") d.demoYes++;
-          const lt=String(r["LeadType"]||r["Lead Quality"]||"").trim().toLowerCase();
-          if (lt.includes("hot")) d.hot++; else if (lt.includes("warm")) d.warm++; else if (lt.includes("cold")) d.cold++;
-          if (String(r["Lead Quality"]||"").toLowerCase().includes("junk")) d.junk++;
-          const src=String(r["Source"]||"").trim();
-          if (src){if(!d.sources[src])d.sources[src]={name:src,total:0,won:0,hot:0,warm:0,cold:0};d.sources[src].total++;if(w==="yes")d.sources[src].won++;if(lt.includes("hot"))d.sources[src].hot++;else if(lt.includes("warm"))d.sources[src].warm++;else d.sources[src].cold++;}
-          const ts=String(r["Timestamp"]||"");
-          if(ts){try{const pts=ts.split(/[/ ]/);if(pts.length>=3){const day=parseInt(pts[0]),mo=parseInt(pts[1]),yr=parseInt(pts[2]);const dt=new Date(yr<100?2000+yr:yr,mo-1,day);if(!isNaN(dt)){const k=dt.toLocaleDateString("en-US",{month:"short",year:"2-digit"});if(!d.monthly[k])d.monthly[k]={month:k,leads:0,won:0,revenue:0};d.monthly[k].leads++;if(w==="yes"){d.monthly[k].won++;d.monthly[k].revenue+=rev;}}}}catch(e){}}
-        });
-        d.deals.sort((a,b)=>b.value-a.value); d.deals=d.deals.slice(0,8); return d;
-      }
-
-      // ── UI ATOMS ─────────────────────────────────────────────────
-
-      const Box = ({children,style}) => <div style={{background:"rgba(255,255,255,0.025)",borderRadius:12,padding:18,border:"1px solid rgba(255,255,255,0.05)",...(style||{})}}>{children}</div>;
-
-      const KPI = ({label,value,sub,accent="#3b82f6"}) => (
-        <Box style={{position:"relative",overflow:"hidden"}}>
-          <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:accent}}/>
-          <div style={{fontSize:10,fontWeight:700,letterSpacing:1.5,color:"rgba(255,255,255,0.36)",textTransform:"uppercase",marginBottom:4}}>{label}</div>
-          <div style={{fontSize:26,fontWeight:700,color:"#fff",lineHeight:1.1}}>{value}</div>
-          {sub&&<div style={{fontSize:11,color:"rgba(255,255,255,0.38)",marginTop:3}}>{sub}</div>}
-        </Box>
-      );
-
-      const FBar = ({label,value,total,color}) => {
-        const pct=total?((value/total)*100).toFixed(0):0;
-        return (
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
-            <div style={{width:95,textAlign:"right",fontSize:11,color:"rgba(255,255,255,0.48)",fontWeight:500}}>{label}</div>
-            <div style={{flex:1,height:24,borderRadius:5,background:"rgba(255,255,255,0.035)",overflow:"hidden"}}>
-              <div style={{width:`${Math.max(pct,2)}%`,height:"100%",background:`linear-gradient(90deg,${color},${color}80)`,borderRadius:5,display:"flex",alignItems:"center",paddingLeft:8,minWidth:38,transition:"width 0.6s"}}>
-                <span style={{fontSize:11,fontWeight:700,color:"#fff"}}>{fN(value)}</span>
-              </div>
-            </div>
-            <span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.32)",width:34,textAlign:"right"}}>{pct}%</span>
-          </div>
-        );
-      };
-
-      const Tag = ({color,children}) => <span style={{fontSize:9,fontWeight:700,background:color,color:"#000",padding:"2px 8px",borderRadius:4,letterSpacing:1.4,textTransform:"uppercase"}}>{children}</span>;
-
-      const SH = ({tag,tagColor,title}) => (
-        <div style={{display:"flex",alignItems:"center",gap:10,margin:"26px 0 14px"}}>
-          {tag&&<Tag color={tagColor}>{tag}</Tag>}
-          <h2 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>{title}</h2>
-          <div style={{flex:1,height:1,background:"rgba(255,255,255,0.06)"}}/>
-        </div>
-      );
-
-      const TT = ({active,payload,label}) => {
-        if (!active||!payload?.length) return null;
-        return (
-          <div style={{background:"#181828",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:"8px 12px",fontSize:11}}>
-            <div style={{fontWeight:600,color:"#fff",marginBottom:3}}>{label}</div>
-            {payload.map((p,i)=><div key={i} style={{color:p.color}}>{p.name}: {typeof p.value==="number"&&p.value>999?fmt(p.value):fN(p.value)}</div>)}
-          </div>
-        );
-      };
-
-      const MP = ({data,size=108}) => (
-        <PieChart width={size} height={size}>
-          <Pie data={data} cx={size/2} cy={size/2} innerRadius={size*0.26} outerRadius={size*0.44} paddingAngle={3} dataKey="value" stroke="none">
-            {data.map((d,i)=><Cell key={i} fill={d.color||COLORS[i]}/>)}
-          </Pie>
-        </PieChart>
-      );
-
-      const SC = ({label,value,total,color}) => (
-        <div style={{background:"rgba(255,255,255,0.02)",borderRadius:8,padding:"12px 6px",border:"1px solid rgba(255,255,255,0.04)",textAlign:"center",borderTop:`3px solid ${color}`}}>
-          <div style={{fontSize:9,color:"rgba(255,255,255,0.34)",fontWeight:600,letterSpacing:1.1,textTransform:"uppercase",marginBottom:3}}>{label}</div>
-          <div style={{fontSize:20,fontWeight:700,color:"#fff"}}>{value}</div>
-          <div style={{fontSize:9,color,fontWeight:600}}>{total?`${((value/total)*100).toFixed(0)}%`:"100%"}</div>
-        </div>
-      );
-
-      // ── SETUP SCREEN ─────────────────────────────────────────────
-
-      function SetupScreen() {
-        const code = `function doGet(e) {\n  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();\n  var data = sheet.getDataRange().getValues();\n  var headers = data[0], rows = [];\n  for (var i = 1; i < data.length; i++) {\n    var row = {};\n    for (var j = 0; j < headers.length; j++) row[headers[j]] = data[i][j];\n    rows.push(row);\n  }\n  return ContentService.createTextOutput(JSON.stringify({data:rows})).setMimeType(ContentService.MimeType.JSON);\n}`;
-        return (
-          <div style={{minHeight:"100vh",background:"#0a0a12",display:"flex",alignItems:"center",justifyContent:"center",padding:32}}>
-            <div style={{maxWidth:560,textAlign:"center"}}>
-              <div style={{fontSize:48,marginBottom:16}}>🔗</div>
-              <h1 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 8px"}}>Connect Your Google Sheets</h1>
-              <p style={{fontSize:13,color:"rgba(255,255,255,0.45)",lineHeight:1.7,margin:"0 0 24px"}}>Your sheets stay 100% private. A small Apps Script acts as a secure read-only data bridge.</p>
-              <div style={{textAlign:"left",background:"rgba(255,255,255,0.03)",borderRadius:12,padding:24,border:"1px solid rgba(255,255,255,0.06)"}}>
-                {[
-                  {s:"1",t:"Open each Google Sheet",d:"Extensions → Apps Script"},
-                  {s:"2",t:"Paste the script below",d:"Replace any existing code in the editor"},
-                  {s:"3",t:"Deploy → Web App",d:"Execute as: Me · Who has access: Anyone"},
-                  {s:"4",t:"Authorize when prompted",d:"Allow the script to read your sheet"},
-                  {s:"5",t:"Copy the Web App URL",d:"Paste into this index.html at the top of the <script> block"},
-                ].map((x,i)=>(
-                  <div key={i} style={{display:"flex",gap:14,marginBottom:i<4?16:0}}>
-                    <div style={{width:28,height:28,borderRadius:"50%",background:"#3b82f6",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>{x.s}</div>
-                    <div><div style={{fontSize:13,fontWeight:600,color:"#fff"}}>{x.t}</div><div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:2}}>{x.d}</div></div>
-                  </div>
-                ))}
-              </div>
-              <div style={{marginTop:20,padding:16,background:"rgba(245,158,11,0.08)",borderRadius:10,border:"1px solid rgba(245,158,11,0.15)"}}>
-                <div style={{fontSize:12,color:"#f59e0b",fontWeight:600,marginBottom:6}}>Apps Script Code (use for BOTH sheets):</div>
-                <pre style={{fontSize:10,color:"rgba(255,255,255,0.6)",margin:0,whiteSpace:"pre-wrap",textAlign:"left",lineHeight:1.6,background:"rgba(0,0,0,0.3)",padding:12,borderRadius:6}}>{code}</pre>
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      // ── MAIN ────────────────────────────────────────────────────
-
-      function Dashboard() {
-        const [tab,setTab]         = useState("overview");
-        const [fRows,setFRows]     = useState(null);
-        const [iRows,setIRows]     = useState(null);
-        const [loading,setLoading] = useState(true);
-        const [error,setError]     = useState(null);
-        const [lastRef,setLastRef] = useState(null);
-
-        const notCfg = FIELD_SCRIPT_URL.includes("PASTE_YOUR")||INSIDE_SCRIPT_URL.includes("PASTE_YOUR");
-
-        const fetchData = useCallback(async () => {
-          if (notCfg){setLoading(false);return;}
-          setLoading(true);setError(null);
-          try {
-            const [fRes,iRes] = await Promise.all([fetch(FIELD_SCRIPT_URL),fetch(INSIDE_SCRIPT_URL)]);
-            if (!fRes.ok) throw new Error(`Field script HTTP ${fRes.status}`);
-            if (!iRes.ok) throw new Error(`Inside script HTTP ${iRes.status}`);
-            const fJ=await fRes.json(), iJ=await iRes.json();
-            setFRows(fJ.data||[]); setIRows(iJ.data||[]); setLastRef(new Date());
-          } catch(e){setError(e.message);}
-          finally{setLoading(false);}
-        },[notCfg]);
-
-        useEffect(()=>{fetchData();const iv=setInterval(fetchData,REFRESH_MS);return()=>clearInterval(iv);},[fetchData]);
-
-        // Hide the native boot screen once React has painted
-        useEffect(()=>{const el=document.getElementById("boot");if(el)el.style.display="none";},[]);
-
-        const F   = useMemo(()=>fRows?processField(fRows):null,[fRows]);
-        const I   = useMemo(()=>iRows?processInside(iRows):null,[iRows]);
-        const spA = useMemo(()=>F?Object.values(F.sp).sort((a,b)=>b.visits-a.visits):[]  ,[F]);
-        const prA = useMemo(()=>F?Object.entries(F.products).map(([n,v])=>({name:n,value:v})).sort((a,b)=>b.value-a.value):[]  ,[F]);
-        const loA = useMemo(()=>F?Object.entries(F.locations).map(([n,v])=>({name:n,value:v})).sort((a,b)=>b.value-a.value):[]  ,[F]);
-        const srA = useMemo(()=>I?Object.values(I.sources).sort((a,b)=>b.total-a.total).slice(0,8):[]  ,[I]);
-        const fM  = useMemo(()=>F?Object.values(F.monthly).sort((a,b)=>new Date("1 "+a.month)-new Date("1 "+b.month)):[]  ,[F]);
-        const iM  = useMemo(()=>I?Object.values(I.monthly).sort((a,b)=>new Date("1 "+a.month)-new Date("1 "+b.month)):[]  ,[I]);
-        const cr=I?.total?((I.won/I.total)*100).toFixed(1):"0";
-        const ir=F?.total?((F.interested/F.total)*100).toFixed(1):"0";
-        const qr=I?.qs?((I.won/I.qs)*100).toFixed(0):"0";
-        const tabs=[{id:"overview",label:"Overview"},{id:"inside",label:"Inside Sales"},{id:"field",label:"Field Sales"},{id:"pipeline",label:"Pipeline & Insights"}];
-
-        if (notCfg) return <SetupScreen/>;
-
-        if (loading&&!F) return (
-          <div style={{minHeight:"100vh",background:"#0a0a12",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:14}}>
-            <div style={{width:36,height:36,border:"3px solid rgba(59,130,246,0.15)",borderTop:"3px solid #3b82f6",borderRadius:"50%",animation:"spin 1s linear infinite"}}/>
-            <div style={{color:"rgba(255,255,255,0.45)",fontSize:13}}>Fetching live data from your sheets…</div>
-          </div>
-        );
-
-        if (error) return (
-          <div style={{minHeight:"100vh",background:"#0a0a12",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:14,padding:32}}>
-            <div style={{fontSize:36}}>⚠️</div>
-            <div style={{color:"#ef4444",fontSize:15,fontWeight:600}}>Connection Error</div>
-            <div style={{color:"rgba(255,255,255,0.45)",fontSize:12,textAlign:"center",maxWidth:480,lineHeight:1.6}}>{error}</div>
-            <div style={{color:"rgba(255,255,255,0.3)",fontSize:11,textAlign:"center",maxWidth:440,background:"rgba(255,255,255,0.03)",padding:14,borderRadius:8,border:"1px solid rgba(255,255,255,0.05)",lineHeight:1.6}}>
-              Check that your Apps Script is deployed with "Anyone" access and you have authorised it.
-            </div>
-            <button onClick={fetchData} style={{marginTop:10,padding:"9px 22px",background:"#3b82f6",color:"#fff",border:"none",borderRadius:7,fontSize:12,fontWeight:600,cursor:"pointer"}}>Retry</button>
-          </div>
-        );
-
-        if (!F||!I) return null;
-
-        return (
-          <div style={{minHeight:"100vh",background:"#0a0a12",color:"#e2e2e2",padding:"18px 22px",maxWidth:1200,margin:"0 auto"}}>
-
-            {/* HEADER */}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18,flexWrap:"wrap",gap:10}}>
-              <div>
-                <h1 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Aditi Tracking — Sales KPI Dashboard</h1>
-                <p style={{fontSize:11,color:"rgba(255,255,255,0.28)",margin:"3px 0 0"}}>🔒 Private Sheets · Auto-refreshes every 5 min</p>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                {lastRef&&<span style={{fontSize:9,color:"rgba(255,255,255,0.22)"}}>Updated {lastRef.toLocaleTimeString()}</span>}
-                <button onClick={fetchData} disabled={loading} style={{padding:"5px 12px",background:"rgba(59,130,246,0.12)",border:"1px solid rgba(59,130,246,0.25)",borderRadius:6,color:"#3b82f6",fontSize:10,fontWeight:600,cursor:loading?"wait":"pointer"}}>{loading?"…":"↻ Refresh"}</button>
-                <div style={{background:"rgba(16,185,129,0.1)",border:"1px solid rgba(16,185,129,0.22)",borderRadius:5,padding:"3px 9px",fontSize:9,fontWeight:700,color:"#10b981",letterSpacing:1}}>● LIVE</div>
-              </div>
-            </div>
-
-            {/* TABS */}
-            <div style={{display:"flex",gap:3,marginBottom:18,background:"rgba(255,255,255,0.02)",borderRadius:8,padding:3}}>
-              {tabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 16px",borderRadius:6,border:"none",cursor:"pointer",fontSize:11,fontWeight:600,background:tab===t.id?"rgba(59,130,246,0.14)":"transparent",color:tab===t.id?"#3b82f6":"rgba(255,255,255,0.32)"}}>{t.label}</button>)}
-            </div>
-
-            {/* OVERVIEW */}
-            {tab==="overview"&&<>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10}}>
-                <KPI label="Field Visits" value={fN(F.total)} sub={`${F.purposeNew} new · ${F.purposeExist} existing`} accent="#10b981"/>
-                <KPI label="Inside Leads" value={fN(I.total)} sub={`${I.won} won · ${I.lost} lost`} accent="#3b82f6"/>
-                <KPI label="Won Revenue" value={fmt(I.wonRev)} sub={`${I.won} closed`} accent="#f59e0b"/>
-                <KPI label="Field Pipeline" value={fmt(F.revenue)} sub="Expected rev" accent="#8b5cf6"/>
-                <KPI label="Inside Conv %" value={`${cr}%`} sub="Lead → Won" accent="#ef4444"/>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginTop:14}}>
-                <Box>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><Tag color="#3b82f6">INSIDE</Tag><span style={{fontSize:12,fontWeight:600,color:"#fff"}}>Sales Funnel</span></div>
-                  <FBar label="Total" value={I.total} total={I.total} color="#3b82f6"/>
-                  <FBar label="1st Call" value={I.fc} total={I.total} color="#6366f1"/>
-                  <FBar label="Follow-up 1" value={I.fu1} total={I.total} color="#8b5cf6"/>
-                  <FBar label="Follow-up 2" value={I.fu2} total={I.total} color="#a855f7"/>
-                  <FBar label="Follow-up 3" value={I.fu3} total={I.total} color="#c084fc"/>
-                  <FBar label="Quoted" value={I.qs} total={I.total} color="#f59e0b"/>
-                  <FBar label="Won" value={I.won} total={I.total} color="#10b981"/>
-                </Box>
-                <Box>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><Tag color="#10b981">FIELD</Tag><span style={{fontSize:12,fontWeight:600,color:"#fff"}}>Visit Pipeline</span></div>
-                  <FBar label="Total" value={F.total} total={F.total} color="#10b981"/>
-                  <FBar label="New" value={F.purposeNew} total={F.total} color="#3b82f6"/>
-                  <FBar label="Existing" value={F.purposeExist} total={F.total} color="#06b6d4"/>
-                  <FBar label="Follow-up" value={F.purposeFU} total={F.total} color="#f59e0b"/>
-                  <FBar label="Interested" value={F.interested} total={F.total} color="#8b5cf6"/>
-                  <FBar label="Not Int." value={F.notInterested} total={F.total} color="#ef4444"/>
-                </Box>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginTop:14}}>
-                {[{t:"NBD vs Existing — Inside",n:I.total,e:0,tt:I.total},{t:"NBD vs Existing — Field",n:F.purposeNew,e:F.purposeExist+F.purposeFU,tt:F.total}].map((x,i)=>(
-                  <Box key={i}>
-                    <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:10}}>{x.t}</div>
-                    <div style={{display:"flex",alignItems:"center",gap:14}}>
-                      <MP data={[{name:"NBD",value:x.n,color:"#3b82f6"},{name:"Existing",value:Math.max(x.e,1),color:"#10b981"}]}/>
-                      <div>{[{l:"NBD",v:x.n,c:"#3b82f6"},{l:"Existing",v:x.e,c:"#10b981"}].map(q=>(
-                        <div key={q.l} style={{marginBottom:5,display:"flex",alignItems:"center",gap:6}}>
-                          <span style={{width:8,height:8,borderRadius:2,background:q.c,display:"inline-block"}}/>
-                          <span style={{fontSize:11,color:"#fff"}}>{q.l}: {q.v}</span>
-                          <span style={{fontSize:9,color:"rgba(255,255,255,0.25)"}}>({x.tt?((q.v/x.tt)*100).toFixed(0):0}%)</span>
-                        </div>
-                      ))}</div>
-                    </div>
-                  </Box>
-                ))}
-              </div>
-            </>}
-
-            {/* INSIDE SALES */}
-            {tab==="inside"&&<>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(135px,1fr))",gap:10}}>
-                <KPI label="Total Leads" value={I.total} accent="#3b82f6"/>
-                <KPI label="Demo Given" value={I.demoYes} sub={`${I.total?((I.demoYes/I.total)*100).toFixed(0):0}%`} accent="#6366f1"/>
-                <KPI label="Quoted" value={I.qs} accent="#f59e0b"/>
-                <KPI label="Won" value={I.won} sub={fmt(I.wonRev)} accent="#10b981"/>
-                <KPI label="Lost" value={I.lost} accent="#ef4444"/>
-                <KPI label="Quote→Win" value={`${qr}%`} accent="#8b5cf6"/>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1.8fr",gap:14,marginTop:14}}>
-                <Box>
-                  <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:12}}>Lead Quality</div>
-                  <div style={{display:"flex",justifyContent:"center"}}><MP data={[{name:"Hot",value:I.hot,color:"#ef4444"},{name:"Warm",value:I.warm,color:"#f59e0b"},{name:"Cold",value:I.cold,color:"#6b7280"}]} size={120}/></div>
-                  <div style={{marginTop:8}}>
-                    {[{n:"Hot",v:I.hot,c:"#ef4444"},{n:"Warm",v:I.warm,c:"#f59e0b"},{n:"Cold",v:I.cold,c:"#6b7280"}].map(q=>(
-                      <div key={q.n} style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}>
-                        <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:2,background:q.c,display:"inline-block"}}/><span style={{fontSize:11,color:"#fff"}}>{q.n}</span></div>
-                        <span style={{fontSize:12,fontWeight:600,color:"#fff"}}>{q.v}</span>
-                      </div>
-                    ))}
-                    {I.junk>0&&<div style={{fontSize:10,color:"rgba(255,255,255,0.25)",marginTop:4}}>Junk: {I.junk}</div>}
-                  </div>
-                </Box>
-                <Box>
-                  <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:12}}>Source Performance</div>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={srA} layout="vertical" margin={{left:5}}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" horizontal={false}/>
-                      <XAxis type="number" tick={{fill:"rgba(255,255,255,0.22)",fontSize:9}} axisLine={false}/>
-                      <YAxis type="category" dataKey="name" tick={{fill:"rgba(255,255,255,0.42)",fontSize:9}} axisLine={false} width={90}/>
-                      <Tooltip content={<TT/>}/>
-                      <Bar dataKey="hot" stackId="a" fill="#ef4444" name="Hot"/>
-                      <Bar dataKey="warm" stackId="a" fill="#f59e0b" name="Warm"/>
-                      <Bar dataKey="cold" stackId="a" fill="#4b5563" radius={[0,3,3,0]} name="Cold"/>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </Box>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginTop:14}}>
-                <Box>
-                  <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:10}}>Top Won Deals</div>
-                  {I.deals.length===0&&<div style={{fontSize:11,color:"rgba(255,255,255,0.25)"}}>No won deals yet</div>}
-                  {I.deals.map((d,i)=>(
-                    <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:i<I.deals.length-1?"1px solid rgba(255,255,255,0.03)":"none"}}>
-                      <div><div style={{fontSize:11,fontWeight:600,color:"#fff"}}>{d.name}</div><div style={{fontSize:9,color:"rgba(255,255,255,0.25)"}}>{d.product}</div></div>
-                      <span style={{fontSize:13,fontWeight:700,color:"#10b981"}}>{fmt(d.value)}</span>
-                    </div>
-                  ))}
-                  <div style={{marginTop:10,padding:"7px 10px",background:"rgba(16,185,129,0.07)",borderRadius:6,border:"1px solid rgba(16,185,129,0.12)"}}>
-                    <span style={{fontSize:9,color:"#10b981",fontWeight:600}}>TOTAL WON: </span>
-                    <span style={{fontSize:12,fontWeight:700,color:"#10b981"}}>{fmt(I.wonRev)}</span>
-                  </div>
-                </Box>
-                <Box>
-                  <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:10}}>Monthly Trend</div>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <ComposedChart data={iM}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)"/>
-                      <XAxis dataKey="month" tick={{fill:"rgba(255,255,255,0.3)",fontSize:9}} axisLine={false}/>
-                      <YAxis yAxisId="l" tick={{fill:"rgba(255,255,255,0.2)",fontSize:9}} axisLine={false}/>
-                      <YAxis yAxisId="r" orientation="right" tick={{fill:"rgba(255,255,255,0.2)",fontSize:9}} axisLine={false} tickFormatter={fmt}/>
-                      <Tooltip content={<TT/>}/>
-                      <Bar yAxisId="l" dataKey="leads" fill="#3b82f6" radius={[3,3,0,0]} name="Leads" opacity={0.7}/>
-                      <Bar yAxisId="l" dataKey="won" fill="#10b981" radius={[3,3,0,0]} name="Won"/>
-                      <Line yAxisId="r" type="monotone" dataKey="revenue" stroke="#f59e0b" strokeWidth={2} dot={{fill:"#f59e0b",r:3}} name="Revenue"/>
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </Box>
-              </div>
-            </>}
-
-            {/* FIELD SALES */}
-            {tab==="field"&&<>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
-                <KPI label="Total Visits" value={F.total} accent="#10b981"/>
-                <KPI label="New" value={F.purposeNew} sub={`${F.total?((F.purposeNew/F.total)*100).toFixed(0):0}%`} accent="#3b82f6"/>
-                <KPI label="Interested" value={F.interested} sub={`${ir}%`} accent="#8b5cf6"/>
-                <KPI label="Exp. Revenue" value={fmt(F.revenue)} accent="#f59e0b"/>
-                <KPI label="Not Int." value={F.notInterested} accent="#ef4444"/>
-              </div>
-              <Box style={{marginTop:14}}>
-                <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:12}}>Salesperson — Visits & Revenue</div>
-                <ResponsiveContainer width="100%" height={240}>
-                  <ComposedChart data={spA}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)"/>
-                    <XAxis dataKey="name" tick={{fill:"rgba(255,255,255,0.4)",fontSize:9}} axisLine={false}/>
-                    <YAxis yAxisId="l" tick={{fill:"rgba(255,255,255,0.2)",fontSize:9}} axisLine={false}/>
-                    <YAxis yAxisId="r" orientation="right" tick={{fill:"rgba(255,255,255,0.2)",fontSize:9}} axisLine={false} tickFormatter={fmt}/>
-                    <Tooltip content={<TT/>}/>
-                    <Bar yAxisId="l" dataKey="newV" stackId="a" fill="#3b82f6" name="New"/>
-                    <Bar yAxisId="l" dataKey="existV" stackId="a" fill="#10b981" name="Existing"/>
-                    <Bar yAxisId="l" dataKey="fuV" stackId="a" fill="#f59e0b" name="Follow-up" radius={[3,3,0,0]}/>
-                    <Line yAxisId="r" type="monotone" dataKey="rev" stroke="#ef4444" strokeWidth={2} dot={{fill:"#ef4444",r:3}} name="Exp. Rev"/>
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </Box>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginTop:14}}>
-                <Box>
-                  <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:12}}>Products</div>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={prA} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" horizontal={false}/>
-                      <XAxis type="number" tick={{fill:"rgba(255,255,255,0.2)",fontSize:9}} axisLine={false}/>
-                      <YAxis type="category" dataKey="name" tick={{fill:"rgba(255,255,255,0.4)",fontSize:9}} axisLine={false} width={70}/>
-                      <Tooltip content={<TT/>}/>
-                      <Bar dataKey="value" radius={[0,3,3,0]} name="Visits">{prA.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </Box>
-                <Box>
-                  <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:12}}>Locations</div>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={loA} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" horizontal={false}/>
-                      <XAxis type="number" tick={{fill:"rgba(255,255,255,0.2)",fontSize:9}} axisLine={false}/>
-                      <YAxis type="category" dataKey="name" tick={{fill:"rgba(255,255,255,0.4)",fontSize:9}} axisLine={false} width={85}/>
-                      <Tooltip content={<TT/>}/>
-                      <Bar dataKey="value" radius={[0,3,3,0]} name="Visits">{loA.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}</Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </Box>
-              </div>
-              <Box style={{marginTop:14,overflowX:"auto"}}>
-                <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:10}}>Salesperson Scorecard</div>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
-                  <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>{["Name","Visits","New","Exist","F/U","Int.","Exp Rev"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 7px",color:"rgba(255,255,255,0.3)",fontWeight:600,fontSize:9,textTransform:"uppercase",letterSpacing:1}}>{h}</th>)}</tr></thead>
-                  <tbody>{spA.map((s,i)=><tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.025)"}}><td style={{padding:7,fontWeight:600,color:"#fff"}}>{s.name}</td><td style={{padding:7}}>{s.visits}</td><td style={{padding:7,color:"#3b82f6"}}>{s.newV}</td><td style={{padding:7,color:"#10b981"}}>{s.existV}</td><td style={{padding:7,color:"#f59e0b"}}>{s.fuV}</td><td style={{padding:7,color:"#8b5cf6"}}>{s.intV}</td><td style={{padding:7,color:"#f59e0b",fontWeight:600}}>{fmt(s.rev)}</td></tr>)}</tbody>
-                </table>
-              </Box>
-              <Box style={{marginTop:14}}>
-                <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:12}}>Monthly Visits</div>
-                <ResponsiveContainer width="100%" height={180}>
-                  <BarChart data={fM}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)"/>
-                    <XAxis dataKey="month" tick={{fill:"rgba(255,255,255,0.3)",fontSize:9}} axisLine={false}/>
-                    <YAxis tick={{fill:"rgba(255,255,255,0.2)",fontSize:9}} axisLine={false}/>
-                    <Tooltip content={<TT/>}/>
-                    <Bar dataKey="newV" stackId="a" fill="#3b82f6" name="New"/>
-                    <Bar dataKey="existV" stackId="a" fill="#10b981" name="Existing"/>
-                    <Bar dataKey="fuV" stackId="a" fill="#f59e0b" name="Follow-up" radius={[3,3,0,0]}/>
-                  </BarChart>
-                </ResponsiveContainer>
-              </Box>
-            </>}
-
-            {/* PIPELINE */}
-            {tab==="pipeline"&&<>
-              <SH tag="INSIDE" tagColor="#3b82f6" title="Discovery → Demo → Follow-up → Closure"/>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:5,marginBottom:14}}>
-                {[{l:"Total",v:I.total,c:"#3b82f6"},{l:"1st Call",v:I.fc,c:"#6366f1"},{l:"F/U 1",v:I.fu1,c:"#8b5cf6"},{l:"F/U 2",v:I.fu2,c:"#a855f7"},{l:"F/U 3",v:I.fu3,c:"#c084fc"},{l:"Quoted",v:I.qs,c:"#f59e0b"},{l:"Won",v:I.won,c:"#10b981"}].map((s,i)=><SC key={i} label={s.l} value={s.v} total={i===0?null:I.total} color={s.c}/>)}
-              </div>
-              <Box style={{marginBottom:14}}>
-                <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:10}}>Stage Drop-off</div>
-                {[{f:"Total → 1st Call",a:I.total,b:I.fc},{f:"1st Call → F/U 1",a:I.fc,b:I.fu1},{f:"F/U 1 → F/U 2",a:I.fu1,b:I.fu2},{f:"F/U 2 → F/U 3",a:I.fu2,b:I.fu3},{f:"F/U → Quoted",a:Math.max(I.fu3,I.fu2,I.fu1,1),b:I.qs},{f:"Quoted → Won",a:Math.max(I.qs,1),b:I.won}].map((x,i)=>{
-                  const p=x.a?((1-x.b/x.a)*100).toFixed(0):0;
-                  return(<div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderBottom:i<5?"1px solid rgba(255,255,255,0.025)":"none"}}><span style={{width:110,fontSize:10,color:"rgba(255,255,255,0.42)"}}>{x.f}</span><div style={{flex:1,height:5,background:"rgba(255,255,255,0.035)",borderRadius:3,overflow:"hidden"}}><div style={{width:`${Math.min(p,100)}%`,height:"100%",background:p>50?"#ef4444":p>30?"#f59e0b":"#10b981",borderRadius:3}}/></div><span style={{fontSize:10,fontWeight:700,color:p>50?"#ef4444":p>30?"#f59e0b":"#10b981",width:38,textAlign:"right"}}>-{p}%</span><span style={{fontSize:9,color:"rgba(255,255,255,0.2)",width:34,textAlign:"right"}}>({x.a-x.b})</span></div>);
-                })}
-              </Box>
-              <SH tag="FIELD" tagColor="#10b981" title="Visit → Interest → Revenue"/>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:5,marginBottom:14}}>
-                {[{l:"Visits",v:F.total,c:"#10b981"},{l:"New",v:F.purposeNew,c:"#3b82f6"},{l:"Interested",v:F.interested,c:"#8b5cf6"},{l:"Follow-up",v:F.purposeFU,c:"#f59e0b"},{l:"Not Int.",v:F.notInterested,c:"#ef4444"}].map((s,i)=><SC key={i} label={s.l} value={s.v} total={i===0?null:F.total} color={s.c}/>)}
-              </div>
-              <div style={{background:"linear-gradient(135deg,rgba(59,130,246,0.05),rgba(16,185,129,0.05))",borderRadius:12,padding:20,border:"1px solid rgba(255,255,255,0.06)",marginTop:14}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:12}}>Revenue Summary</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
-                  {[{l:"Inside Won",v:I.wonRev,c:"#3b82f6",s:`${I.won} closed`},{l:"Field Expected",v:F.revenue,c:"#10b981",s:`${F.interested} interested`},{l:"Total Pipeline",v:I.wonRev+F.revenue,c:"#f59e0b",s:"Won + Expected"}].map((x,i)=>(
-                    <div key={i}><div style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontWeight:600,letterSpacing:1,textTransform:"uppercase"}}>{x.l}</div><div style={{fontSize:22,fontWeight:700,color:x.c,marginTop:2}}>{fmt(x.v)}</div><div style={{fontSize:10,color:"rgba(255,255,255,0.25)"}}>{x.s}</div></div>
-                  ))}
-                </div>
-              </div>
-              <Box style={{marginTop:14}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:10}}>Key Insights</div>
-                {[{i:"🔴",t:`${I.total?((1-I.fc/I.total)*100).toFixed(0):0}% of inside leads never get a 1st call — biggest leak.`},{i:"🟡",t:"Google Ads generates volume but mostly Cold leads — review targeting."},{i:"🟢",t:"Customer Referrals have highest win rate — invest in referral programs."},{i:"🔵",t:"AIS-140 dominates field visits. Cross-sell Fuel Sensor & Dashcam."},{i:"🟡",t:`Quote→Win rate is ${qr}% — follow up within 48h of sending quotes.`},{i:"🟢",t:`Field interest rate is ${ir}% — strong lead qualification.`},{i:"🔴",t:`${I.junk} junk leads in pipeline — tighten form validation.`}].map((x,i)=>(
-                  <div key={i} style={{display:"flex",gap:7,padding:"5px 0",borderBottom:i<6?"1px solid rgba(255,255,255,0.025)":"none"}}>
-                    <span style={{fontSize:12}}>{x.i}</span>
-                    <span style={{fontSize:11,color:"rgba(255,255,255,0.55)",lineHeight:1.5}}>{x.t}</span>
-                  </div>
-                ))}
-              </Box>
-            </>}
-
-            <div style={{textAlign:"center",marginTop:24,paddingBottom:12}}>
-              <span style={{fontSize:9,color:"rgba(255,255,255,0.1)"}}>Aditi Tracking · 🔒 Private Sheets · Live Dashboard</span>
-            </div>
-          </div>
-        );
-      }
-
-      ReactDOM.createRoot(document.getElementById("root")).render(<Dashboard/>);
-
-    } catch(err) {
-      console.error("Dashboard error:", err);
-      document.getElementById("boot").style.display="none";
-      document.getElementById("error-box").classList.add("show");
-      document.getElementById("error-text").textContent="Render error: "+err.message;
-    }
-  </script>
+// ========== AUTO-START ==========
+document.addEventListener('DOMContentLoaded',()=>{fetchAllData();setInterval(fetchAllData,300000);});
+</script>
 </body>
 </html>

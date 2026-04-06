@@ -72,6 +72,21 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.5);cursor:poi
 .sdot.error{background:var(--r);}
 @keyframes blink{0%,100%{opacity:1;}50%{opacity:.2;}}
 
+/* ── DEBUG PANEL ── */
+#debugPanel{
+  position:fixed;bottom:0;right:0;width:520px;max-height:50vh;overflow-y:auto;
+  background:rgba(6,9,16,.97);border:1px solid var(--bd);border-radius:10px 0 0 0;
+  font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--t2);
+  padding:12px;z-index:999;display:none;
+}
+#debugPanel.show{display:block;}
+#debugPanel h4{color:var(--c);margin-bottom:8px;font-size:12px;}
+#debugPanel pre{white-space:pre-wrap;word-break:break-all;margin-bottom:6px;}
+.debug-warn{color:var(--a);}
+.debug-err{color:var(--r);}
+.debug-ok{color:var(--g);}
+.dbtn{position:fixed;bottom:10px;right:10px;z-index:1000;background:var(--sf2);border:1px solid var(--bd);color:var(--a);padding:5px 12px;border-radius:6px;font-family:'JetBrains Mono';font-size:10px;cursor:pointer;}
+
 /* ── LAYOUT ── */
 main{padding:16px 24px;max-width:1720px;margin:0 auto;position:relative;z-index:1;}
 
@@ -215,6 +230,11 @@ tbody tr:hover td{background:var(--sf2);}
   <div class="section" id="sec-inside"><div id="insideContent"><div class="lov"><div class="spin"></div><span style="font-size:12px;color:var(--t3)">Loading...</span></div></div></div>
   <div class="section" id="sec-field"><div id="fieldContent"><div class="lov"><div class="spin"></div><span style="font-size:12px;color:var(--t3)">Loading...</span></div></div></div>
 </main>
+
+<!-- Debug toggle button -->
+<button class="dbtn" onclick="toggleDebug()">&#128736; Debug</button>
+<div id="debugPanel"></div>
+
 <script>
 // APIs
 const INSIDE_SALES_API = "https://script.google.com/macros/s/AKfycbxsC_glUfbC5RJSs0BPFYQI5jbsM5p6VeIraKcl-cO8zC8VjVnLqFYQuumhRP69oEy2/exec";
@@ -222,11 +242,42 @@ const FIELD_SALES_API  = "https://script.google.com/macros/s/AKfycbyPgpnZ31W0qhS
 
 let insideData=[], fieldData=[], filteredInsideData=[], filteredFieldData=[], CH={};
 
+// ═══════════════════════════════════════════════════════════════════════
+// DEBUG SYSTEM — Click the ⚙ Debug button (bottom-right) to see output
+// ═══════════════════════════════════════════════════════════════════════
+var debugLog = [];
+function dbg(msg, cls) {
+  debugLog.push({msg:msg, cls:cls||''});
+  console.log('[DBG]', msg);
+}
+function toggleDebug() {
+  var p = document.getElementById('debugPanel');
+  p.classList.toggle('show');
+  if (p.classList.contains('show')) renderDebug();
+}
+function renderDebug() {
+  var p = document.getElementById('debugPanel');
+  var html = '<h4>&#128736; Data Debug Inspector</h4>';
+  debugLog.forEach(function(entry) {
+    html += '<pre class="'+entry.cls+'">'+entry.msg+'</pre>';
+  });
+  p.innerHTML = html;
+}
+
 const num  = function(v){ return Number(v)||0; };
 const has  = function(v){ return v!==null && v!==undefined && v!==''; };
-const isYes= function(v){ return v && String(v).trim().toLowerCase()==='yes'; };
-const pct  = function(a,b){ return b>0 ? ((a/b)*100).toFixed(0)+'%' : 'N/A'; };
 const INR  = '\u20b9';
+
+// ═══════════════════════════════════════════════════════════════════════
+// FIX 1: More robust "yes" checker — matches yes/y/true/1/won
+// ═══════════════════════════════════════════════════════════════════════
+const isYes = function(v){
+  if(!v) return false;
+  var s = String(v).trim().toLowerCase();
+  return s==='yes' || s==='y' || s==='true' || s==='1' || s==='won';
+};
+
+const pct  = function(a,b){ return b>0 ? ((a/b)*100).toFixed(0)+'%' : 'N/A'; };
 
 function fmt(n){
   if(n>=10000000) return INR+(n/10000000).toFixed(2)+' Cr';
@@ -248,6 +299,43 @@ var EMAIL_FIELDS=['Email','email','Email ID','EmailID','Customer Email','Email A
 function getEmail(r){
   for(var i=0;i<EMAIL_FIELDS.length;i++) if(r[EMAIL_FIELDS[i]]&&String(r[EMAIL_FIELDS[i]]).trim()) return String(r[EMAIL_FIELDS[i]]).trim().toLowerCase();
   return (r['Phone']||r['Mobile']||r['Customer Name']||'').toString().trim().toLowerCase();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// FIX 2: Flexible column finder — fuzzy-matches column names
+// ═══════════════════════════════════════════════════════════════════════
+function findCol(row, candidates, fuzzyKeyword) {
+  if (!row) return null;
+  var keys = Object.keys(row);
+  // Try exact match first
+  for (var i=0; i<candidates.length; i++) {
+    if (keys.indexOf(candidates[i]) > -1) return candidates[i];
+  }
+  // Try case-insensitive match
+  for (var i=0; i<candidates.length; i++) {
+    var lower = candidates[i].toLowerCase();
+    for (var j=0; j<keys.length; j++) {
+      if (keys[j].toLowerCase() === lower) return keys[j];
+    }
+  }
+  // Try fuzzy keyword match
+  if (fuzzyKeyword) {
+    var kw = fuzzyKeyword.toLowerCase();
+    for (var j=0; j<keys.length; j++) {
+      if (keys[j].toLowerCase().indexOf(kw) > -1) return keys[j];
+    }
+  }
+  return null;
+}
+
+// Cached column names (reset on each data load)
+var _colCache = {};
+function resolveCol(data, key, candidates, fuzzyKeyword) {
+  if (_colCache[key]) return _colCache[key];
+  if (!data || !data.length) return null;
+  var col = findCol(data[0], candidates, fuzzyKeyword);
+  if (col) _colCache[key] = col;
+  return col;
 }
 
 var _erCol=null;
@@ -289,12 +377,73 @@ async function fetchSheet(url){
 
 async function fetchAllData(){
   setStatus('loading','Fetching...'); hideError();
+  debugLog = []; // reset debug on each fetch
   try{
     var [iR,fR]=await Promise.allSettled([fetchSheet(INSIDE_SALES_API),fetchSheet(FIELD_SALES_API)]);
     var iOk=false,fOk=false;
     if(iR.status==='fulfilled'&&Array.isArray(iR.value)){insideData=iR.value;iOk=insideData.length>0;}else insideData=[];
     if(fR.status==='fulfilled'&&Array.isArray(fR.value)){fieldData=fR.value;fOk=fieldData.length>0;}else fieldData=[];
     filteredInsideData=insideData.slice(); filteredFieldData=fieldData.slice();
+
+    // ═══════════════════════════════════════════════════════════════
+    // DEBUG: Log column names and sample values
+    // ═══════════════════════════════════════════════════════════════
+    _colCache = {}; // reset column cache
+
+    if (insideData.length > 0) {
+      var sampleRow = insideData[0];
+      var allKeys = Object.keys(sampleRow);
+      dbg('── INSIDE SALES DATA ──', 'debug-ok');
+      dbg('Row count: ' + insideData.length);
+      dbg('All columns: ' + JSON.stringify(allKeys));
+
+      // Check critical columns
+      var lsCol = findCol(sampleRow, ['Lead Status', 'lead status', 'LeadStatus', 'Status'], 'lead status');
+      var ovCol = findCol(sampleRow, ['Order value', 'Order Value', 'OrderValue', 'order value'], 'order');
+      var demoCol = findCol(sampleRow, ['Is the Demo Given', 'Demo Given', 'DemoGiven', 'Demo'], 'demo');
+      var quotCol = findCol(sampleRow, ['Quotation Sent', 'QuotationSent', 'Quotation', 'Quote Sent'], 'quotation');
+      var cnCol = findCol(sampleRow, ['Customer Name', 'customer name', 'CustomerName', 'Name'], 'customer');
+
+      dbg('Lead Status column found: ' + (lsCol ? '"'+lsCol+'"' : 'NOT FOUND ⚠'), lsCol ? 'debug-ok' : 'debug-err');
+      dbg('Order value column found: ' + (ovCol ? '"'+ovCol+'"' : 'NOT FOUND ⚠'), ovCol ? 'debug-ok' : 'debug-err');
+      dbg('Customer Name column found: ' + (cnCol ? '"'+cnCol+'"' : 'NOT FOUND ⚠'), cnCol ? 'debug-ok' : 'debug-warn');
+      dbg('Demo column found: ' + (demoCol ? '"'+demoCol+'"' : 'NOT FOUND ⚠'), demoCol ? 'debug-ok' : 'debug-warn');
+      dbg('Quotation column found: ' + (quotCol ? '"'+quotCol+'"' : 'NOT FOUND ⚠'), quotCol ? 'debug-ok' : 'debug-warn');
+
+      // Show sample values for Lead Status column
+      if (lsCol) {
+        var wonVals = {};
+        insideData.forEach(function(r) {
+          var v = String(r[lsCol]||'').trim() || '(empty)';
+          wonVals[v] = (wonVals[v]||0) + 1;
+        });
+        dbg('Lead Status "' + lsCol + '" unique values: ' + JSON.stringify(wonVals), 'debug-warn');
+      }
+
+      // Show sample values for Order value column
+      if (ovCol) {
+        var sampleVals = insideData.slice(0,5).map(function(r){ return r[ovCol]; });
+        dbg('Order value "' + ovCol + '" samples: ' + JSON.stringify(sampleVals));
+      }
+
+      // Store resolved column names for use in compIS
+      _colCache['demoGiven'] = demoCol;
+      _colCache['quotationSent'] = quotCol;
+
+      // Show first row fully
+      dbg('Sample row (first): ' + JSON.stringify(sampleRow));
+    } else {
+      dbg('Inside Sales: NO DATA RETURNED ⚠', 'debug-err');
+    }
+
+    if (fieldData.length > 0) {
+      dbg('── FIELD SALES DATA ──', 'debug-ok');
+      dbg('Row count: ' + fieldData.length);
+      dbg('All columns: ' + JSON.stringify(Object.keys(fieldData[0])));
+    } else {
+      dbg('Field Sales: NO DATA RETURNED ⚠', 'debug-err');
+    }
+
     if(iOk&&fOk) setStatus('live','Live &mdash; '+(insideData.length+fieldData.length)+' records');
     else if(iOk||fOk){setStatus('live','Partial');showError('One source returned empty.');}
     else{setStatus('error','Error');showError('Both APIs failed. Check console (F12).');}
@@ -321,26 +470,82 @@ function switchTab(tab,el){
   el.classList.add('active'); document.getElementById('sec-'+tab).classList.add('active');
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// FIX 3: compIS — uses correct columns:
+//   Closures  → "Lead Status" column, value "won" (case-insensitive)
+//   Revenue   → "Order value" column
+//   NBD/Exist → unique Customer Name+Email, 60-day rule
+// ═══════════════════════════════════════════════════════════════════════
 function compIS(data){
   var allIS=insideData.length>0?insideData:data;
+
+  // ── Build unique customer identity key: Customer Name + Email ──
+  function custKey(r){
+    var name = String(r['Customer Name']||'').trim().toLowerCase();
+    var email = getEmail(r);
+    return name + '||' + email;
+  }
+
+  // ── Track first-seen date per unique customer (across ALL data) ──
   var firstContact={};
-  allIS.forEach(function(r){ var em=getEmail(r); if(!em)return; var d=parseDate(r['Timestamp']); if(d&&(!firstContact[em]||d<firstContact[em]))firstContact[em]=d; });
+  allIS.slice().sort(function(a,b){
+    return (parseDate(a['Timestamp'])||0)-(parseDate(b['Timestamp'])||0);
+  }).forEach(function(r){
+    var key=custKey(r); if(!key||key==='||') return;
+    var d=parseDate(r['Timestamp']);
+    if(d && !firstContact[key]) firstContact[key]=d; // keep earliest
+  });
+
   var t=data.length, seenNew=new Set(), newLeads=0;
   data.slice().sort(function(a,b){return (parseDate(a['Timestamp'])||0)-(parseDate(b['Timestamp'])||0);})
-    .forEach(function(r){ var em=getEmail(r); if(!seenNew.has(em)){seenNew.add(em);newLeads++;} });
+    .forEach(function(r){ var key=custKey(r); if(!seenNew.has(key)){seenNew.add(key);newLeads++;} });
+
   var followUps=data.filter(function(r){return has(r['Follow-up 1 '])||has(r['Follow-up 1'])||has(r['Follow-up 2 '])||has(r['Follow-up 2'])||has(r['Follow-up 3']);}).length;
   var f1=data.filter(function(r){return has(r['Follow-up 1 '])||has(r['Follow-up 1']);}).length;
   var f2=data.filter(function(r){return has(r['Follow-up 2 '])||has(r['Follow-up 2']);}).length;
   var f3=data.filter(function(r){return has(r['Follow-up 3']);}).length;
-  var dg=data.filter(function(r){return isYes(r['Is the Demo Given']);}).length;
-  var qs=data.filter(function(r){return isYes(r['Quotation Sent']);}).length;
-  var wonRows=data.filter(function(r){return isYes(r['Won']);});
+
+  var demoCol = _colCache['demoGiven'] || 'Is the Demo Given';
+  var quotCol = _colCache['quotationSent'] || 'Quotation Sent';
+
+  var dg=data.filter(function(r){return isYes(r[demoCol]);}).length;
+  var qs=data.filter(function(r){return isYes(r[quotCol]);}).length;
+
+  // ── Closures: "Lead Status" column where value is "won" ──
+  var wonRows=data.filter(function(r){
+    var status = String(r['Lead Status']||'').trim().toLowerCase();
+    return status === 'won';
+  });
   var w=wonRows.length;
-  var l=data.filter(function(r){return has(r['Lost'])&&!isYes(r['Won']);}).length;
+
+  // Lost = Lead Status has a value AND it's not "won"
+  var l=data.filter(function(r){
+    var status = String(r['Lead Status']||'').trim().toLowerCase();
+    return status && status !== '' && status !== 'won';
+  }).length;
+
   var junk=data.filter(function(r){return String(r['Lead Quality']||'').toLowerCase()==='junk'||String(r['Remarks']||'').toLowerCase().indexOf('junk')>-1;}).length;
   var wr=qs>0?((w/qs)*100).toFixed(1):0;
+
+  // ── Revenue from "Order value" column ──
   var totalRev=0,nbdRev=0,exRev=0,nbdWon=0,exWon=0;
-  wonRows.forEach(function(r){ var val=num(r['Order Value']); totalRev+=val; var em=getEmail(r),fc=firstContact[em],wonD=parseDate(r['Timestamp']); var days=(fc&&wonD)?(wonD-fc)/86400000:0; if(days<=60){nbdRev+=val;nbdWon++;}else{exRev+=val;exWon++;} });
+  wonRows.forEach(function(r){
+    var val=num(r['Order value']);
+    totalRev+=val;
+
+    // NBD vs Existing: same Customer Name+Email appearing after 60 days = Existing
+    var key=custKey(r);
+    var fc=firstContact[key];
+    var wonD=parseDate(r['Timestamp']);
+    var days=(fc&&wonD)?((wonD-fc)/86400000):0;
+
+    if(days > 60){
+      exRev+=val; exWon++;
+    } else {
+      nbdRev+=val; nbdWon++;
+    }
+  });
+
   var avg=w>0?totalRev/w:0;
   var hot=data.filter(function(r){return String(r['LeadType']||r['Lead Type']||'').toLowerCase()==='hot';}).length;
   var warm=data.filter(function(r){return String(r['LeadType']||r['Lead Type']||'').toLowerCase()==='warm';}).length;
@@ -348,11 +553,11 @@ function compIS(data){
   var src={},sol={},rbs={};
   data.forEach(function(r){ var s=r['Source']||'Unknown'; src[s]=(src[s]||0)+1; });
   data.forEach(function(r){ var s=r['Solution']||'Unknown'; sol[s]=(sol[s]||0)+1; });
-  wonRows.forEach(function(r){ var s=r['Source']||'Unknown'; rbs[s]=(rbs[s]||0)+num(r['Order Value']); });
+  wonRows.forEach(function(r){ var s=r['Source']||'Unknown'; rbs[s]=(rbs[s]||0)+num(r['Order value']); });
   // Monthly closures for trend
   var monthly={};
   wonRows.forEach(function(r){ var d=parseDate(r['Timestamp']); if(d){ var k=d.getFullYear()+'-'+(d.getMonth()+1); monthly[k]=(monthly[k]||0)+1; } });
-  return {t,newLeads,followUps,f1,f2,f3,dg,qs,w,l,junk,wr,totalRev,nbdRev,exRev,nbdWon,exWon,avg,hot,warm,cold,src,sol,rbs,wonRows,firstContact,monthly};
+  return {t,newLeads,followUps,f1,f2,f3,dg,qs,w,l,junk,wr,totalRev,nbdRev,exRev,nbdWon,exWon,avg,hot,warm,cold,src,sol,rbs,wonRows,firstContact,monthly,custKey:custKey};
 }
 
 function compFS(data){
@@ -395,7 +600,7 @@ Chart.register(ChartDataLabels);
 var CD={
   responsive:true,maintainAspectRatio:false,
   plugins:{
-    datalabels:{display:false}, // off by default, enabled per-chart
+    datalabels:{display:false},
     legend:{
       labels:{color:'#8899bb',font:{family:'Inter',size:10},padding:14,usePointStyle:true,pointStyleWidth:8}
     },
@@ -442,7 +647,6 @@ function mkPipe(steps){
   return html;
 }
 
-// Sort months and return last N
 function lastNMonths(obj,n){
   var keys=Object.keys(obj).sort();
   if(keys.length>n) keys=keys.slice(keys.length-n);
@@ -454,7 +658,6 @@ function renderOV(){
   var I=compIS(filteredInsideData), F=compFS(filteredFieldData);
   var html='';
 
-  // KPI strip
   html+='<div class="kstrip" style="grid-template-columns:repeat(6,1fr)">';
   html+='<div class="kc"><div class="kc-lbl">IS Leads</div><div class="kc-val">'+I.t+'</div><div class="kc-sub"><em>'+I.newLeads+'</em> new &nbsp; <em>'+I.followUps+'</em> follow-up</div><div class="kc-foot" style="background:var(--c)"></div></div>';
   html+='<div class="kc"><div class="kc-lbl">Field Visits</div><div class="kc-val">'+F.t+'</div><div class="kc-sub"><em>'+F.nv+'</em> new &nbsp; <em>'+F.ev+'</em> existing</div><div class="kc-foot" style="background:var(--b)"></div></div>';
@@ -464,7 +667,6 @@ function renderOV(){
   html+='<div class="kc"><div class="kc-lbl">Avg Deal</div><div class="kc-val sm" style="color:var(--a)">'+fmt(Math.round(I.avg))+'</div><div class="kc-sub">from <em>'+I.w+'</em> closed deals</div><div class="kc-foot" style="background:var(--a)"></div></div>';
   html+='</div>';
 
-  // Pipeline
   html+='<div class="pipe-wrap"><div class="slbl">IS Conversion Pipeline</div>';
   html+=mkPipe([
     {lbl:'Discovery',  val:I.newLeads,  base:I.t,        col:'var(--c)',  isBase:true},
@@ -475,7 +677,6 @@ function renderOV(){
   ]);
   html+='</div>';
 
-  // Charts row
   html+='<div class="g3">';
   html+='<div class="card"><div class="card-t has-line">Lead Sources</div><div class="chart-wrap" style="height:190px"><canvas id="ov1"></canvas></div></div>';
   html+='<div class="card"><div class="card-t has-line">Monthly Closures Trend</div><div class="chart-wrap" style="height:190px"><canvas id="ov2"></canvas></div></div>';
@@ -484,7 +685,6 @@ function renderOV(){
 
   document.getElementById('overviewContent').innerHTML=html;
 
-  // Chart 1: Lead sources horizontal bar
   var sl=Object.keys(I.src).sort(function(a,b){return I.src[b]-I.src[a];}).slice(0,7);
   dc('ov1');
   CH['ov1']=new Chart(document.getElementById('ov1'),{
@@ -509,7 +709,6 @@ function renderOV(){
     })
   });
 
-  // Chart 2: Monthly closures line
   var trend=lastNMonths(I.monthly,8);
   dc('ov2');
   CH['ov2']=new Chart(document.getElementById('ov2'),{
@@ -534,7 +733,6 @@ function renderOV(){
     })
   });
 
-  // Chart 3: Field visit doughnut
   dc('ov3');
   CH['ov3']=new Chart(document.getElementById('ov3'),{
     type:'doughnut',
@@ -557,7 +755,9 @@ function renderOV(){
 // ── INSIDE SALES ──────────────────────────────────────────────────────────────
 function renderIS(){
   var I=compIS(filteredInsideData);
-  var closureRows=filteredInsideData.filter(function(r){return isYes(r['Won']);}).slice(-20).reverse();
+  var closureRows=filteredInsideData.filter(function(r){
+    return String(r['Lead Status']||'').trim().toLowerCase() === 'won';
+  }).slice(-20).reverse();
   var html='';
 
   html+='<div class="kstrip" style="grid-template-columns:repeat(5,1fr)">';
@@ -578,9 +778,7 @@ function renderIS(){
   ]);
   html+='</div>';
 
-  // Charts row
   html+='<div class="g3">';
-  // Revenue split card
   html+='<div class="card">';
   html+='<div class="card-t has-line">Revenue Split (60-day rule)</div>';
   html+='<div class="rpair">';
@@ -598,12 +796,12 @@ function renderIS(){
   html+='<div class="card"><div class="card-t has-line">Solution Mix</div><div class="chart-wrap" style="height:200px"><canvas id="is2"></canvas></div></div>';
   html+='</div>';
 
-  // Closures table
   html+='<div class="tcard">';
   html+='<div class="tcard-hdr"><span class="tcard-t">Recent Closures</span><span class="tcard-ct">'+closureRows.length+' deals shown</span></div>';
   html+='<div class="tscroll"><table><thead><tr><th>Customer</th><th>Source</th><th>Solution</th><th>Type</th><th>Days to Close</th><th>Order Value</th></tr></thead><tbody>';
   closureRows.forEach(function(r){
-    var em=getEmail(r),fc=I.firstContact[em],wonD=parseDate(r['Timestamp']);
+    var key = I.custKey(r);
+    var fc=I.firstContact[key], wonD=parseDate(r['Timestamp']);
     var days=fc&&wonD?Math.round((wonD-fc)/86400000):0;
     var isNBD=days<=60;
     html+='<tr>'
@@ -612,13 +810,12 @@ function renderIS(){
       +'<td style="color:var(--t1)">'+(r['Solution']||'&mdash;')+'</td>'
       +'<td><span class="badge '+(isNBD?'bc':'bp')+'">'+(isNBD?'NBD':'Existing')+'</span></td>'
       +'<td style="font-family:JetBrains Mono,monospace;color:'+(isNBD?'var(--g)':'var(--p)')+'">'+days+'d</td>'
-      +'<td style="color:var(--g);font-family:JetBrains Mono,monospace;font-weight:600">'+INR+num(r['Order Value']).toLocaleString('en-IN')+'</td>'
+      +'<td style="color:var(--g);font-family:JetBrains Mono,monospace;font-weight:600">'+INR+num(r['Order value']).toLocaleString('en-IN')+'</td>'
       +'</tr>';
   });
   html+='</tbody></table></div></div>';
   document.getElementById('insideContent').innerHTML=html;
 
-  // Revenue by source bar
   var rl=Object.keys(I.rbs).sort(function(a,b){return I.rbs[b]-I.rbs[a];}).slice(0,8);
   dc('is1');
   CH['is1']=new Chart(document.getElementById('is1'),{
@@ -643,7 +840,6 @@ function renderIS(){
     })
   });
 
-  // Solution doughnut
   var soll=Object.keys(I.sol).sort(function(a,b){return I.sol[b]-I.sol[a];});
   dc('is2');
   CH['is2']=new Chart(document.getElementById('is2'),{
@@ -681,7 +877,6 @@ function renderFS(){
   html+='</div>';
 
   html+='<div class="g3">';
-  // Revenue split
   html+='<div class="card">';
   html+='<div class="card-t has-line">Expected Revenue Split</div>';
   html+='<div class="rpair">';
@@ -693,7 +888,6 @@ function renderFS(){
   html+='<div class="card"><div class="card-t has-line">Visit Type Breakdown</div><div class="chart-wrap" style="height:190px"><canvas id="fs2"></canvas></div></div>';
   html+='</div>';
 
-  // SP table
   html+='<div class="tcard">';
   html+='<div class="tcard-hdr"><span class="tcard-t">Salesperson Performance</span><span class="tcard-ct">'+sp.length+' reps</span></div>';
   html+='<div class="tscroll"><table><thead><tr><th>Name</th><th>Visits</th><th>New</th><th>Existing</th><th>Follow-up</th><th>Activity</th><th>Exp. Revenue</th></tr></thead><tbody>';
@@ -713,7 +907,6 @@ function renderFS(){
   html+='</tbody></table></div></div>';
   document.getElementById('fieldContent').innerHTML=html;
 
-  // Monthly visit trend
   var trend=lastNMonths(F.monthly,8);
   dc('fs1');
   CH['fs1']=new Chart(document.getElementById('fs1'),{
@@ -738,7 +931,6 @@ function renderFS(){
     })
   });
 
-  // Visit doughnut
   dc('fs2');
   CH['fs2']=new Chart(document.getElementById('fs2'),{
     type:'doughnut',

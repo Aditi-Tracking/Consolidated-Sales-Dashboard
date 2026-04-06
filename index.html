@@ -389,6 +389,7 @@ async function fetchAllData(){
     // DEBUG: Log column names and sample values
     // ═══════════════════════════════════════════════════════════════
     _colCache = {}; // reset column cache
+    _resolvedCols = {}; // reset resolved column names
 
     if (insideData.length > 0) {
       var sampleRow = insideData[0];
@@ -449,6 +450,31 @@ async function fetchAllData(){
     else{setStatus('error','Error');showError('Both APIs failed. Check console (F12).');}
     document.getElementById('lastUpdated').textContent='Updated '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
     renderAll();
+
+    // Log resolved column mappings after first render
+    dbg('── RESOLVED COLUMN MAPPINGS ──', 'debug-ok');
+    Object.keys(_resolvedCols).forEach(function(hint) {
+      dbg('  "' + hint + '" → "' + _resolvedCols[hint] + '"', 'debug-ok');
+    });
+    if (Object.keys(_resolvedCols).length === 0) {
+      dbg('  No columns resolved yet — possible data issue', 'debug-err');
+    }
+
+    // Quick stats after render
+    var I = compIS(filteredInsideData);
+    dbg('── QUICK STATS CHECK ──', 'debug-warn');
+    dbg('  Won rows (Lead Status=won): ' + I.w);
+    dbg('  Total Revenue: ' + I.totalRev);
+    dbg('  NBD Revenue: ' + I.nbdRev + ' (' + I.nbdWon + ' deals)');
+    dbg('  Existing Revenue: ' + I.exRev + ' (' + I.exWon + ' deals)');
+    if (I.w === 0) dbg('  ⚠ ZERO closures — check Lead Status values above!', 'debug-err');
+    if (I.totalRev === 0 && I.w > 0) dbg('  ⚠ Closures found but ZERO revenue — Order value column may not be resolving!', 'debug-err');
+
+    // Auto-show debug panel if something looks wrong
+    if (I.w === 0 || I.totalRev === 0) {
+      document.getElementById('debugPanel').classList.add('show');
+      renderDebug();
+    }
   }catch(e){setStatus('error','Error');showError('Network error: '+e.message);}
 }
 
@@ -471,9 +497,54 @@ function switchTab(tab,el){
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// FIX 3: compIS — uses correct columns:
+// Helper: case-insensitive, trim-aware column value getter
+// Finds column by keyword match (ignoring case & whitespace), caches result
+// ═══════════════════════════════════════════════════════════════════════
+var _resolvedCols = {};
+function getVal(r, colHint) {
+  // If we already resolved this hint to an actual key, use it
+  if (_resolvedCols[colHint] && r.hasOwnProperty(_resolvedCols[colHint])) {
+    return r[_resolvedCols[colHint]];
+  }
+  // Try exact match first
+  if (r.hasOwnProperty(colHint)) {
+    _resolvedCols[colHint] = colHint;
+    return r[colHint];
+  }
+  // Fuzzy: case-insensitive + trim match
+  var hintLower = colHint.trim().toLowerCase();
+  var keys = Object.keys(r);
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i].trim().toLowerCase() === hintLower) {
+      _resolvedCols[colHint] = keys[i];
+      console.log('[COL RESOLVED] "' + colHint + '" → "' + keys[i] + '"');
+      return r[keys[i]];
+    }
+  }
+  // Substring match as last resort
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i].trim().toLowerCase().indexOf(hintLower) > -1 ||
+        hintLower.indexOf(keys[i].trim().toLowerCase()) > -1) {
+      _resolvedCols[colHint] = keys[i];
+      console.log('[COL RESOLVED fuzzy] "' + colHint + '" → "' + keys[i] + '"');
+      return r[keys[i]];
+    }
+  }
+  return undefined;
+}
+
+// Numeric version of getVal
+function getNumVal(r, colHint) {
+  var raw = getVal(r, colHint);
+  if (raw === null || raw === undefined || raw === '') return 0;
+  var v = parseFloat(String(raw).replace(/[\u20b9,\s₹]/g, ''));
+  return isNaN(v) ? 0 : v;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// compIS — uses correct columns:
 //   Closures  → "Lead Status" column, value "won" (case-insensitive)
-//   Revenue   → "Order value" column
+//   Revenue   → "Order value" column (case-insensitive lookup)
 //   NBD/Exist → unique Customer Name+Email, 60-day rule
 // ═══════════════════════════════════════════════════════════════════════
 function compIS(data){
@@ -481,7 +552,7 @@ function compIS(data){
 
   // ── Build unique customer identity key: Customer Name + Email ──
   function custKey(r){
-    var name = String(r['Customer Name']||'').trim().toLowerCase();
+    var name = String(getVal(r,'Customer Name')||'').trim().toLowerCase();
     var email = getEmail(r);
     return name + '||' + email;
   }
@@ -505,32 +576,29 @@ function compIS(data){
   var f2=data.filter(function(r){return has(r['Follow-up 2 '])||has(r['Follow-up 2']);}).length;
   var f3=data.filter(function(r){return has(r['Follow-up 3']);}).length;
 
-  var demoCol = _colCache['demoGiven'] || 'Is the Demo Given';
-  var quotCol = _colCache['quotationSent'] || 'Quotation Sent';
-
-  var dg=data.filter(function(r){return isYes(r[demoCol]);}).length;
-  var qs=data.filter(function(r){return isYes(r[quotCol]);}).length;
+  var dg=data.filter(function(r){return isYes(getVal(r,'Is the Demo Given'));}).length;
+  var qs=data.filter(function(r){return isYes(getVal(r,'Quotation Sent'));}).length;
 
   // ── Closures: "Lead Status" column where value is "won" ──
   var wonRows=data.filter(function(r){
-    var status = String(r['Lead Status']||'').trim().toLowerCase();
+    var status = String(getVal(r,'Lead Status')||'').trim().toLowerCase();
     return status === 'won';
   });
   var w=wonRows.length;
 
   // Lost = Lead Status has a value AND it's not "won"
   var l=data.filter(function(r){
-    var status = String(r['Lead Status']||'').trim().toLowerCase();
+    var status = String(getVal(r,'Lead Status')||'').trim().toLowerCase();
     return status && status !== '' && status !== 'won';
   }).length;
 
-  var junk=data.filter(function(r){return String(r['Lead Quality']||'').toLowerCase()==='junk'||String(r['Remarks']||'').toLowerCase().indexOf('junk')>-1;}).length;
+  var junk=data.filter(function(r){return String(getVal(r,'Lead Quality')||'').toLowerCase()==='junk'||String(getVal(r,'Remarks')||'').toLowerCase().indexOf('junk')>-1;}).length;
   var wr=qs>0?((w/qs)*100).toFixed(1):0;
 
-  // ── Revenue from "Order value" column ──
+  // ── Revenue from "Order value" column (case-insensitive) ──
   var totalRev=0,nbdRev=0,exRev=0,nbdWon=0,exWon=0;
   wonRows.forEach(function(r){
-    var val=num(r['Order value']);
+    var val = getNumVal(r, 'Order value');
     totalRev+=val;
 
     // NBD vs Existing: same Customer Name+Email appearing after 60 days = Existing
@@ -547,13 +615,13 @@ function compIS(data){
   });
 
   var avg=w>0?totalRev/w:0;
-  var hot=data.filter(function(r){return String(r['LeadType']||r['Lead Type']||'').toLowerCase()==='hot';}).length;
-  var warm=data.filter(function(r){return String(r['LeadType']||r['Lead Type']||'').toLowerCase()==='warm';}).length;
-  var cold=data.filter(function(r){return String(r['LeadType']||r['Lead Type']||'').toLowerCase()==='cold';}).length;
+  var hot=data.filter(function(r){var v=String(getVal(r,'LeadType')||getVal(r,'Lead Type')||'').toLowerCase();return v==='hot';}).length;
+  var warm=data.filter(function(r){var v=String(getVal(r,'LeadType')||getVal(r,'Lead Type')||'').toLowerCase();return v==='warm';}).length;
+  var cold=data.filter(function(r){var v=String(getVal(r,'LeadType')||getVal(r,'Lead Type')||'').toLowerCase();return v==='cold';}).length;
   var src={},sol={},rbs={};
-  data.forEach(function(r){ var s=r['Source']||'Unknown'; src[s]=(src[s]||0)+1; });
-  data.forEach(function(r){ var s=r['Solution']||'Unknown'; sol[s]=(sol[s]||0)+1; });
-  wonRows.forEach(function(r){ var s=r['Source']||'Unknown'; rbs[s]=(rbs[s]||0)+num(r['Order value']); });
+  data.forEach(function(r){ var s=getVal(r,'Source')||'Unknown'; src[s]=(src[s]||0)+1; });
+  data.forEach(function(r){ var s=getVal(r,'Solution')||'Unknown'; sol[s]=(sol[s]||0)+1; });
+  wonRows.forEach(function(r){ var s=getVal(r,'Source')||'Unknown'; rbs[s]=(rbs[s]||0)+getNumVal(r,'Order value'); });
   // Monthly closures for trend
   var monthly={};
   wonRows.forEach(function(r){ var d=parseDate(r['Timestamp']); if(d){ var k=d.getFullYear()+'-'+(d.getMonth()+1); monthly[k]=(monthly[k]||0)+1; } });
@@ -756,7 +824,7 @@ function renderOV(){
 function renderIS(){
   var I=compIS(filteredInsideData);
   var closureRows=filteredInsideData.filter(function(r){
-    return String(r['Lead Status']||'').trim().toLowerCase() === 'won';
+    return String(getVal(r,'Lead Status')||'').trim().toLowerCase() === 'won';
   }).slice(-20).reverse();
   var html='';
 
@@ -805,12 +873,12 @@ function renderIS(){
     var days=fc&&wonD?Math.round((wonD-fc)/86400000):0;
     var isNBD=days<=60;
     html+='<tr>'
-      +'<td style="color:var(--t1);font-weight:600">'+(r['Customer Name']||'&mdash;')+'</td>'
-      +'<td><span class="badge bb">'+(r['Source']||'&mdash;')+'</span></td>'
-      +'<td style="color:var(--t1)">'+(r['Solution']||'&mdash;')+'</td>'
+      +'<td style="color:var(--t1);font-weight:600">'+(getVal(r,'Customer Name')||'&mdash;')+'</td>'
+      +'<td><span class="badge bb">'+(getVal(r,'Source')||'&mdash;')+'</span></td>'
+      +'<td style="color:var(--t1)">'+(getVal(r,'Solution')||'&mdash;')+'</td>'
       +'<td><span class="badge '+(isNBD?'bc':'bp')+'">'+(isNBD?'NBD':'Existing')+'</span></td>'
       +'<td style="font-family:JetBrains Mono,monospace;color:'+(isNBD?'var(--g)':'var(--p)')+'">'+days+'d</td>'
-      +'<td style="color:var(--g);font-family:JetBrains Mono,monospace;font-weight:600">'+INR+num(r['Order value']).toLocaleString('en-IN')+'</td>'
+      +'<td style="color:var(--g);font-family:JetBrains Mono,monospace;font-weight:600">'+INR+getNumVal(r,'Order value').toLocaleString('en-IN')+'</td>'
       +'</tr>';
   });
   html+='</tbody></table></div></div>';

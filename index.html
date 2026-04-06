@@ -593,7 +593,8 @@ function compIS(data){
   }).length;
 
   var junk=data.filter(function(r){return String(getVal(r,'Lead Quality')||'').toLowerCase()==='junk'||String(getVal(r,'Remarks')||'').toLowerCase().indexOf('junk')>-1;}).length;
-  var wr=qs>0?((w/qs)*100).toFixed(1):0;
+  // FIX: Win rate = won deals / total leads × 100
+  var wr=t>0?((w/t)*100).toFixed(1):0;
 
   // ── Revenue from "Order value" column (case-insensitive) ──
   var totalRev=0,nbdRev=0,exRev=0,nbdWon=0,exWon=0;
@@ -622,10 +623,42 @@ function compIS(data){
   data.forEach(function(r){ var s=getVal(r,'Source')||'Unknown'; src[s]=(src[s]||0)+1; });
   data.forEach(function(r){ var s=getVal(r,'Solution')||'Unknown'; sol[s]=(sol[s]||0)+1; });
   wonRows.forEach(function(r){ var s=getVal(r,'Source')||'Unknown'; rbs[s]=(rbs[s]||0)+getNumVal(r,'Order value'); });
+
+  // ── Salesperson pipeline stats (by email → name) ──
+  var EMAIL_NAME_MAP = {
+    'supportmum@adititracking.com':'Darshil Shah',
+    'salesgoa@adititracking.com':'Priyanka',
+    'salesgujarat@adititracking.com':'Atul',
+    'salesmumbai@adititracking.com':'Ronak Shah',
+    'coolbus.enterprise@adititracking.com':'Michael',
+    'cse@adititracking.com':'Prachi',
+    'cs1@adititracking.com':'Saloni Raut',
+    'support@adititracking.com':'Saajan Jain'
+  };
+  function getSpName(r){
+    var email = String(getVal(r,'Email')||'').trim().toLowerCase();
+    return EMAIL_NAME_MAP[email] || email || 'Unknown';
+  }
+  var spStats={};
+  data.forEach(function(r){
+    var sp=getSpName(r);
+    if(!spStats[sp]) spStats[sp]={total:0,hot:0,warm:0,cold:0,won:0,rev:0};
+    spStats[sp].total++;
+    var lt=String(getVal(r,'LeadType')||getVal(r,'Lead Type')||'').toLowerCase();
+    if(lt==='hot') spStats[sp].hot++;
+    if(lt==='warm') spStats[sp].warm++;
+    if(lt==='cold') spStats[sp].cold++;
+    var status=String(getVal(r,'Lead Status')||'').trim().toLowerCase();
+    if(status==='won'){
+      spStats[sp].won++;
+      spStats[sp].rev+=getNumVal(r,'Order value');
+    }
+  });
+
   // Monthly closures for trend
   var monthly={};
   wonRows.forEach(function(r){ var d=parseDate(r['Timestamp']); if(d){ var k=d.getFullYear()+'-'+(d.getMonth()+1); monthly[k]=(monthly[k]||0)+1; } });
-  return {t,newLeads,followUps,f1,f2,f3,dg,qs,w,l,junk,wr,totalRev,nbdRev,exRev,nbdWon,exWon,avg,hot,warm,cold,src,sol,rbs,wonRows,firstContact,monthly,custKey:custKey};
+  return {t,newLeads,followUps,f1,f2,f3,dg,qs,w,l,junk,wr,totalRev,nbdRev,exRev,nbdWon,exWon,avg,hot,warm,cold,src,sol,rbs,wonRows,firstContact,monthly,custKey:custKey,spStats:spStats};
 }
 
 function compFS(data){
@@ -729,7 +762,7 @@ function renderOV(){
   html+='<div class="kstrip" style="grid-template-columns:repeat(6,1fr)">';
   html+='<div class="kc"><div class="kc-lbl">IS Leads</div><div class="kc-val">'+I.t+'</div><div class="kc-sub"><em>'+I.newLeads+'</em> new &nbsp; <em>'+I.followUps+'</em> follow-up</div><div class="kc-foot" style="background:var(--c)"></div></div>';
   html+='<div class="kc"><div class="kc-lbl">Field Visits</div><div class="kc-val">'+F.t+'</div><div class="kc-sub"><em>'+F.nv+'</em> new &nbsp; <em>'+F.ev+'</em> existing</div><div class="kc-foot" style="background:var(--b)"></div></div>';
-  html+='<div class="kc"><div class="kc-lbl">Closures</div><div class="kc-val" style="color:var(--g)">'+I.w+'</div><div class="kc-sub">Win rate <em>'+I.wr+'%</em> of quotes</div><div class="kc-foot" style="background:var(--g)"></div></div>';
+  html+='<div class="kc"><div class="kc-lbl">Closures</div><div class="kc-val" style="color:var(--g)">'+I.w+'</div><div class="kc-sub">Win rate <em>'+I.wr+'%</em> of total leads</div><div class="kc-foot" style="background:var(--g)"></div></div>';
   html+='<div class="kc"><div class="kc-lbl">IS Revenue</div><div class="kc-val sm" style="color:var(--g)">'+fmt(I.totalRev)+'</div><div class="kc-sub">NBD <em>'+fmt(I.nbdRev)+'</em></div><div class="kc-foot" style="background:var(--g)"></div></div>';
   html+='<div class="kc"><div class="kc-lbl">FS Pipeline</div><div class="kc-val sm" style="color:var(--p)">'+fmt(F.ter)+'</div><div class="kc-sub">Expected revenue</div><div class="kc-foot" style="background:var(--p)"></div></div>';
   html+='<div class="kc"><div class="kc-lbl">Avg Deal</div><div class="kc-val sm" style="color:var(--a)">'+fmt(Math.round(I.avg))+'</div><div class="kc-sub">from <em>'+I.w+'</em> closed deals</div><div class="kc-foot" style="background:var(--a)"></div></div>';
@@ -823,9 +856,6 @@ function renderOV(){
 // ── INSIDE SALES ──────────────────────────────────────────────────────────────
 function renderIS(){
   var I=compIS(filteredInsideData);
-  var closureRows=filteredInsideData.filter(function(r){
-    return String(getVal(r,'Lead Status')||'').trim().toLowerCase() === 'won';
-  }).slice(-20).reverse();
   var html='';
 
   html+='<div class="kstrip" style="grid-template-columns:repeat(5,1fr)">';
@@ -864,21 +894,26 @@ function renderIS(){
   html+='<div class="card"><div class="card-t has-line">Solution Mix</div><div class="chart-wrap" style="height:200px"><canvas id="is2"></canvas></div></div>';
   html+='</div>';
 
+  // ── Salesperson Pipeline Table ──
+  var sp=Object.entries(I.spStats).sort(function(a,b){return b[1].total-a[1].total;});
+  var maxLeads=sp.length?sp[0][1].total:1;
   html+='<div class="tcard">';
-  html+='<div class="tcard-hdr"><span class="tcard-t">Recent Closures</span><span class="tcard-ct">'+closureRows.length+' deals shown</span></div>';
-  html+='<div class="tscroll"><table><thead><tr><th>Customer</th><th>Source</th><th>Solution</th><th>Type</th><th>Days to Close</th><th>Order Value</th></tr></thead><tbody>';
-  closureRows.forEach(function(r){
-    var key = I.custKey(r);
-    var fc=I.firstContact[key], wonD=parseDate(r['Timestamp']);
-    var days=fc&&wonD?Math.round((wonD-fc)/86400000):0;
-    var isNBD=days<=60;
+  html+='<div class="tcard-hdr"><span class="tcard-t">Salesperson Pipeline</span><span class="tcard-ct">'+sp.length+' reps</span></div>';
+  html+='<div class="tscroll"><table><thead><tr><th>Name</th><th>Total Leads</th><th>Hot</th><th>Warm</th><th>Cold</th><th>Won</th><th>Conversion %</th><th>Activity</th><th>Revenue</th></tr></thead><tbody>';
+  sp.forEach(function(entry){
+    var name=entry[0], d=entry[1];
+    var convRate=d.total>0?((d.won/d.total)*100).toFixed(1):'0.0';
+    var barW=Math.round((d.total/maxLeads)*100);
     html+='<tr>'
-      +'<td style="color:var(--t1);font-weight:600">'+(getVal(r,'Customer Name')||'&mdash;')+'</td>'
-      +'<td><span class="badge bb">'+(getVal(r,'Source')||'&mdash;')+'</span></td>'
-      +'<td style="color:var(--t1)">'+(getVal(r,'Solution')||'&mdash;')+'</td>'
-      +'<td><span class="badge '+(isNBD?'bc':'bp')+'">'+(isNBD?'NBD':'Existing')+'</span></td>'
-      +'<td style="font-family:JetBrains Mono,monospace;color:'+(isNBD?'var(--g)':'var(--p)')+'">'+days+'d</td>'
-      +'<td style="color:var(--g);font-family:JetBrains Mono,monospace;font-weight:600">'+INR+getNumVal(r,'Order value').toLocaleString('en-IN')+'</td>'
+      +'<td style="color:var(--t1);font-weight:600">'+name+'</td>'
+      +'<td style="font-family:JetBrains Mono,monospace;color:var(--t1)">'+d.total+'</td>'
+      +'<td><span class="badge br">'+d.hot+'</span></td>'
+      +'<td><span class="badge ba">'+d.warm+'</span></td>'
+      +'<td><span class="badge bb">'+d.cold+'</span></td>'
+      +'<td><span class="badge bg">'+d.won+'</span></td>'
+      +'<td style="font-family:JetBrains Mono,monospace;color:'+(parseFloat(convRate)>=10?'var(--g)':parseFloat(convRate)>=5?'var(--a)':'var(--r)')+'">'+convRate+'%</td>'
+      +'<td><div class="mbar"><div class="mbar-tr"><div class="mbar-fi" style="width:'+barW+'%;background:linear-gradient(90deg,var(--c),var(--p))"></div></div><span style="font-size:10px;color:var(--t3);font-family:JetBrains Mono,monospace">'+d.total+'</span></div></td>'
+      +'<td style="color:var(--g);font-family:JetBrains Mono,monospace;font-weight:600">'+fmt(d.rev)+'</td>'
       +'</tr>';
   });
   html+='</tbody></table></div></div>';
